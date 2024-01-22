@@ -1,0 +1,29 @@
+# Ignore all build directories
+build/
+
+# Ignore Python virtual environments
+venv/
+
+# Ignore CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+CMakeLists.txt
+*.cmake
+
+# Ignore compiled binaries and object files
+*.o
+*.out
+*.exe
+
+# Ignore dependency archives
+*.tar.gz
+
+# Ignore editor/IDE specific files
+.vscode/
+*.code-workspace
+
+# Ignore system specific files
+.DS_Store
+Thumbs.db
