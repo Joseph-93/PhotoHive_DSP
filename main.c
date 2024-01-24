@@ -405,7 +405,7 @@ void write_image_to_file(Image_RGB* image, const char* path) {
     int r, g, b;
     int i_tot = image->height * image->width;
     for (int i=0; i<i_tot; i++) {
-        r = (int)(image->r[i] * 255.0f);    //TODO: Weeeeird values are coming out of Jackjack->r,g,b!!
+        r = (int)(image->r[i] * 255.0f);
         g = (int)(image->g[i] * 255.0f);
         b = (int)(image->b[i] * 255.0f);
         fprintf(file, "%d %d %d\n", r, g, b);
@@ -632,31 +632,21 @@ void free_1D_lookup_table(Lookup_1D* table) {
 /******************************************************************************
  * rgb_normalize_fft takes in an fft with 3 channels and normalizes all values
  *   to within the range [0,1].
- *  -fft_normalizer_lookup is returned from get_fft_normalizer_lookup(). Since
- *   it may be passed into the function, this allows many FFTs to be normalized
- *   efficiently without recreating the table. HOWEVER, if NULL is passed in as
- *   fft_normalizer_lookup, then the rgb_normalize_fft will automatically get
- *   the lookup table on its own.
- *  -Function calculates one global max & min, applies it to all 3 channels.
+ *  -Function calculates one global max and applies it to all 3 channels.
  *  -Normalization uses a mathematical model found here:
- *   https://www.desmos.com/calculator/fi7w3o0ced
- *      -f(x,M) is the function which defines what discrete value within [0,255]
- *       is assigned given x, M, and S.
- *      -x represents any value within the FFT image
- *      -M represents the maximum value in the FFT image
- *      -S scales the output from [0,1] to [0,255]
- *  -If fft_normalizer_lookup is a valid double array then it will be used. If
- *   it is NULL, then the lookup table will be retrieved in-function.
+ *   https://www.desmos.com/calculator/bm5nnnk7oo
+ *      -h(x; G_s) is the function which defines what discrete value within [0, 1]
+ *       is assigned given x and G_s.
+ *      -x represents any value within the original FFT image
+ *      -G_s represents the maximum value in the original FFT image
  *  -If DEBUG is set to 1, speed performance will suffer, as info messages for
- *   maximums, minimums, and scaled values will be shown.
+ *   maximums and scaled values will be shown.
 ******************************************************************************/
 void rgb_normalize_fft(Image_RGB* fft, Lookup_1D* fft_normalizer_lookup) {
-    // Set Minimums and Maximums as any valid value
-    double max = fft->r[0];
-    double min = max;
+    double max = fft->r[0];     // Set Maximum as any valid value
+    int i_tot = fft->height * fft->width;   // Get stopping point
 
-    // Set maximum and minimum values
-    int i_tot = fft->height * fft->width;
+    // Find maximum input
     for (int i=0; i<i_tot; i++) {
         double r_pixel = fft->r[i]; // Set temporary values for efficiency
         double g_pixel = fft->g[i];
@@ -664,94 +654,39 @@ void rgb_normalize_fft(Image_RGB* fft, Lookup_1D* fft_normalizer_lookup) {
         if (max < r_pixel) {max = r_pixel; max_index = i;}
         if (max < g_pixel) {max = g_pixel;}
         if (max < b_pixel) {max = b_pixel;}
-        #ifdef DEBUG    // Minimum value is not necessary outside of debugging
-            if (min > g_pixel) {min = g_pixel;}
-            if (min > r_pixel) {min = r_pixel;}
-            if (min > b_pixel) {min = b_pixel;}
-        #endif
     }
-
-    #ifdef DEBUG    // Show max and min values pre-normalization
-        fprintf(stderr, "Maximum value: r[%d]: %lf\n", max_index, fft->r[max_index]);
-        printf("Maximum value found in the NOT normalized FFT: %f\n", max);
-        printf("Minimum value found in the NOT normalized FFT: %f\n", min);
-    #endif
-
-    // Scale back to range of values [0,1]
-    for (int i=0; i<i_tot; i++) {
-        fft->r[i] = fft->r[i] / max;
-        fft->g[i] = fft->g[i] / max;
-        fft->b[i] = fft->b[i] / max;
-    }
-
-    fprintf(stderr, "after dividing by max: %lf", fft->r[max_index]);
-
-    // Get lookup table if not provided
-    bool free_fft_normalizer_lookup = false;
-    if (!fft_normalizer_lookup) {
-        fft_normalizer_lookup = get_fft_normalizer_lookup();
-        free_fft_normalizer_lookup = true;
-    }
-    bool r_found = false;   // bools to track whether a comparison should even occur
-    bool g_found = false;
-    bool b_found = false;
-    for (int i=0; i<i_tot; i++) {   // For every value in the fft
-        for (int j=0; j<fft_normalizer_lookup->length; j++) {
-            // Iterate over the lookup table to find new mapped values for r, g, and b components.
-            // For each component (r, g, b), if the mapped value hasn't been found yet 
-            // (indicated by r_found, g_found, b_found), compare the current component value 
-            // with the input value from the lookup table. If the component value is less than 
-            // the lookup input value, map it to the corresponding output value from the 
-            // lookup table and mark the component as found.
-            if (!r_found && fft_normalizer_lookup->input[j] > fft->r[i]) {
-                #ifdef DEBUG
-                    fprintf(stderr, "input[%d]: %lf\tr[%d]: %lf\toutput[%d]: %lf\n",
-                    i, fft_normalizer_lookup->input[j], i, fft->r[i],
-                    i, fft_normalizer_lookup->output[j]);
-                #endif
-                fft->r[i] = fft_normalizer_lookup->output[j];
-                r_found = true;
-            }
-            if (!g_found && fft_normalizer_lookup->input[j] > fft->g[i]) {
-                fft->g[i] = fft_normalizer_lookup->output[j];
-                g_found = true;
-            }
-            if (!b_found && fft_normalizer_lookup->input[j] > fft->b[i]) {
-                fft->b[i] = fft_normalizer_lookup->output[j];
-                b_found = true;
-            }
-            if (r_found && g_found && b_found) {
-                break;
-            }
-        }
-        // Reset tracking bools
-        r_found = false;
-        g_found = false;
-        b_found = false;
-    }
-
-    free_1D_lookup_table(fft_normalizer_lookup);
 
     #ifdef DEBUG
-        // Set Minimums and Maximums as any valid value
-        max = fft->r[0];
-        min = max;
+        printf("Maximum value found in the normalized FFT: %f\n", max);
+    #endif
+    
+    // Set G_s
+    Pixel G_s = 1/(2*log(sqrt(max) + 1));
+    
+    // calculate normalized values
+    for (int i=0; i<i_tot; i++) {
+        if (fft->r[i] < 1) fft->r[i] = 0;
+        else fft->r[i] = log(fft->r[i]) * G_s;
+        if (fft->g[i] < 1) fft->g[i] = 0;
+        else fft->g[i] = log(fft->g[i]) * G_s;
+        if (fft->b[i] < 1) fft->b[i] = 0;
+        else fft->b[i] = log(fft->b[i]) * G_s;
+    }
 
-        // Set maximum and minimum values
+    #ifdef DEBUG
+        // Set Maximum as any valid value
+        max = fft->r[0];
+
+        // Set maximum values
         for (int i=0; i<i_tot; i++) {
             double r_pixel = fft->r[i]; // Set temporary values for efficiency
             double g_pixel = fft->g[i];
             double b_pixel = fft->b[i];
             if (max < r_pixel) {max = r_pixel;}
-            if (min > r_pixel) {min = r_pixel;}
             if (max < g_pixel) {max = g_pixel;}
-            if (min > g_pixel) {min = g_pixel;}
             if (max < b_pixel) {max = b_pixel;}
-            if (min > b_pixel) {min = b_pixel;}
         }
-
         printf("Maximum value found in the normalized FFT: %f\n", max);
-        printf("Minimum value found in the normalized FFT: %f\n", min);
     #endif
 }
 
@@ -899,28 +834,20 @@ int main() {
     }
 
     Image_RGB* fft;
-    Image_RGB* fft_image;
     {   // Compute the FFT for RGB image
         fft = rgb_fft(image);
         rgb_normalize_fft(fft, NULL);
-        fft_image = fft_shift(fft);
-        free_image_rgb(fft), fft = NULL;
-        for(int i=0; i<(fft_image->height*fft_image->width); i++) {
-            if (fft_image->r[i] > 0.004f) {
-                fprintf(stderr, "fft->r[%d]: %lf\n", i, fft_image->r[i]);
-            }
-        }
+        free_image_rgb(image), image=NULL;
     }
 
     {   // write fft_image to user's desired image file (in .txt format for python to save via imageSaver.py)
         char* output_filename = create_path("images/output/", "Enter the name of the .txt file you wish to write to: ", ".txt");
-        write_image_to_file(fft_image, output_filename);
+        write_image_to_file(fft, output_filename);
         free(output_filename), output_filename = NULL;
-        free_image_rgb(fft_image), fft_image = NULL;
     }
 
     // Free original image last since it's used periodically during runtime.
-    free_image_rgb(image), image = NULL;
+    free_image_rgb(fft), fft = NULL;
 
     return 0;
 }
