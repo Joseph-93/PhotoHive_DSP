@@ -5,6 +5,9 @@
 #include <fftw3.h>
 #include <math.h>
 
+int max_x, max_y;
+double max_r;
+
 typedef struct {
     double r;
     double g;
@@ -346,20 +349,23 @@ void rgb_normalize_photo(Image_RGB* image) {
     // Set Minimums and Maximums as any valid value
     double max = image->pixels[0][0].r;
     double min = max;
+    max_r = max;
 
     // Set maximum and minimum values
     for (int y=0; y<image->height; y++) {
         for (int x=0; x<image->width; x++) {
-            Pixel_RGB pixel = image->pixels[y][x];            
+            Pixel_RGB pixel = image->pixels[y][x];
             if (max < pixel.r) {max = pixel.r;}
             if (min > pixel.r) {min = pixel.r;}
             if (max < pixel.g) {max = pixel.g;}
             if (min > pixel.g) {min = pixel.g;}
             if (max < pixel.b) {max = pixel.b;}
             if (min > pixel.b) {min = pixel.b;}
+            if (max_r < pixel.r) {max_r = pixel.r; max_x = x; max_y = y;}
+            if (pixel.r != 0.0) {printf("%lf\t", pixel.r);}
         }
     }
-
+    printf("R Maximum: image->pixels[%d][%d].r: %lf\n", max_y, max_x, image->pixels[max_y][max_x].r);
     printf("Maximum value found in the NOT normalized FFT: %f\n", max);
     printf("Minimum value found in the NOT normalized FFT: %f\n", min);
 
@@ -388,6 +394,8 @@ void rgb_normalize_photo(Image_RGB* image) {
     max = image->pixels[0][0].r;
     min = max;
 
+    printf("R Maximum post-log: image->pixels[%d][%d].r: %lf\n", max_y, max_x, image->pixels[max_y][max_x].r);
+
     // Set maximum and minimum values
     for (int y=0; y<image->height; y++) {
         for (int x=0; x<image->width; x++) {
@@ -400,7 +408,6 @@ void rgb_normalize_photo(Image_RGB* image) {
             if (min > pixel.b) {min = pixel.b;}
         }
     }
-
     printf("Maximum value found in the normalized FFT: %f\n", max);
     printf("Minimum value found in the normalized FFT: %f\n", min);
 
@@ -414,6 +421,8 @@ void rgb_normalize_photo(Image_RGB* image) {
             image->pixels[y][x].b = (image->pixels[y][x].b - min) * ratio;
         }
     }
+    printf("R Maximum post-normalization: image->pixels[%d][%d].r: %lf\n", max_y, max_x, image->pixels[max_y][max_x].r);
+
 }
 
 
