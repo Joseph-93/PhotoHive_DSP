@@ -6,7 +6,7 @@
 #include <math.h>
 #include <stdbool.h>
 
-#define DEBUG 1
+#define DEBUG
 #define FFT_NORMALIZER_LOOKUP_SIZE 256
 
 
@@ -102,6 +102,13 @@ typedef struct Blur_Profile_RGB {
     Bin** g_bins; // bins should be referenced as [angle][radius]
     Bin** b_bins; // bins should be referenced as [angle][radius]
 } Blur_Profile_RGB;     // Holds blur profile of bins for R,G,B
+
+
+/******************************************************************************
+ * GLOBAL VARIABLES
+******************************************************************************/
+int num_cores;
+int max_index;
 
 
 /******************************************************************************
@@ -211,12 +218,17 @@ Blur_Profile_RGB* calculate_blur_profile(
     double radius_bin_size_sq = profile->radius_bin_size*profile->radius_bin_size;
 
     // Allocate space for empty bins
-    profile->r_bins = (Bin*)calloc((num_angle_bins) * (num_radius_bins), sizeof(Bin));
-    profile->g_bins = (Bin*)calloc((num_angle_bins) * (num_radius_bins), sizeof(Bin));
-    profile->b_bins = (Bin*)calloc((num_angle_bins) * (num_radius_bins), sizeof(Bin));
+    profile->r_bins = (Bin**)malloc(num_angle_bins * sizeof(Bin*));
+    profile->g_bins = (Bin**)malloc(num_angle_bins * sizeof(Bin*));
+    profile->b_bins = (Bin**)malloc(num_angle_bins * sizeof(Bin*));
     if (!profile->r_bins || !profile->g_bins || !profile->b_bins) {
         fprintf(stderr, "ERROR: Memory allocation failed for r,g, or b bins.\n");
         return NULL;
+    }
+    for (int i=0; i<num_radius_bins; i++) {
+        profile->r_bins[i] = (Bin*)calloc(num_radius_bins, sizeof(Bin));
+        profile->g_bins[i] = (Bin*)calloc(num_radius_bins, sizeof(Bin));
+        profile->b_bins[i] = (Bin*)calloc(num_radius_bins, sizeof(Bin));
     }
 
     // Sum up blurs in each bin space
@@ -251,10 +263,10 @@ Blur_Profile_RGB* calculate_blur_profile(
 ******************************************************************************/
 Image_RGB* create_rgb_image(unsigned int width, unsigned int height) {
     if (!height) {  // If height is 0, throw error and return NULL
-        fprintf(stderr, "ERROR: create_rgb_image recieved height=0.\n");
+        fprintf(stderr, "ERROR: create_rgb_image received height==0.\n");
         return NULL;
-    } else if (!width == 0) {   // If width is 0, throw error and return NULL
-        fprintf(stderr, "ERROR: create_rgb_image recieved width == 0.\n");
+    } else if (!width) {   // If width is 0, throw error and return NULL
+        fprintf(stderr, "ERROR: create_rgb_image received width == 0.\n");
         return NULL;
     }
     Image_RGB* image = (Image_RGB*)malloc(sizeof(Image_RGB));
@@ -285,10 +297,10 @@ Image_RGB* create_rgb_image(unsigned int width, unsigned int height) {
 ******************************************************************************/
 Image_PGM* create_pgm_image(unsigned int width, unsigned int height) {
     if (!height) {  // If height is 0, throw error and return NULL
-        fprintf(stderr, "ERROR: create_pgm_image recieved height=0.\n");
+        fprintf(stderr, "ERROR: create_pgm_image received height==0.\n");
         return NULL;
     } else if (!width) {    // If width is 0, throw error and return NULL
-        fprintf(stderr, "ERROR: create_pgm_image recieved width == 0.\n");
+        fprintf(stderr, "ERROR: create_pgm_image received width == 0.\n");
         return NULL;
     }
     Image_PGM* image = (Image_PGM*)malloc(sizeof(Image_PGM));
@@ -386,16 +398,16 @@ Image_RGB* read_image(const char* filepath) {
 void write_image_to_file(Image_RGB* image, const char* path) {
     // Open file for writing
     FILE* file = fopen(path, "w");
-    if (file == NULL) {perror("Error opening file."); return;}
+    if (file == NULL) {fprintf(stderr, "Error opening file.\n"); return;}
     fprintf(file, "%d %d\n", image->width, image->height);
 
     // Begin copying file
     int r, g, b;
     int i_tot = image->height * image->width;
     for (int i=0; i<i_tot; i++) {
-        r = (int)(image->r[i] * 255);
-        g = (int)(image->g[i] * 255);
-        b = (int)(image->b[i] * 255);
+        r = (int)(image->r[i] * 255.0f);    //TODO: Weeeeird values are coming out of Jackjack->r,g,b!!
+        g = (int)(image->g[i] * 255.0f);
+        b = (int)(image->b[i] * 255.0f);
         fprintf(file, "%d %d %d\n", r, g, b);
     }
     fclose(file);
@@ -428,6 +440,8 @@ Image_RGB* crop_image(Image_RGB* image, int right, int left, int bottom, int top
     for (int x=0; x<width; x++) {
         for (int y=0; y<height; y++) {
             cropped_image->r[y*width + x] = image->r[(y+top)*image->width + x + left];
+            cropped_image->g[y*width + x] = image->g[(y+top)*image->width + x + left];
+            cropped_image->b[y*width + x] = image->b[(y+top)*image->width + x + left];
         }
     }
     return cropped_image;
@@ -439,53 +453,62 @@ Image_RGB* crop_image(Image_RGB* image, int right, int left, int bottom, int top
  *  -If no fftw_plan* is given, then the function will automatically generate
  *   an fftw_plan* to be used, based on the inputted image height.
 ******************************************************************************/
-Image_RGB* rgb_fft(Image_RGB* image, fftw_plan* plan) {
+Image_RGB* rgb_fft(Image_RGB* image) {
+    // Allow threading
+    fftw_init_threads();
+    fftw_plan_with_nthreads(num_cores);
+
     // Create output and input
-    fftw_complex* output = fftw_malloc(sizeof(fftw_complex) * image->width * image->height);
-    double* in = fftw_malloc(sizeof(double) * image->height * image->width);
+    fftw_complex* output = fftw_alloc_complex((image->width/2+1) * image->height);
+    double* in = fftw_alloc_real(image->height * image->width);
+
     if (!output || !in) {
         fprintf(stderr, "ERROR: Memory allocation for fftw_malloc failed.\n");
+        fftw_free(output);
+        fftw_free(in);
         return NULL;
     }
 
-    // If no fftw_plan was passed, then create one.
+    fftw_plan plan = fftw_plan_dft_r2c_2d(image->height, image->width, in, output, FFTW_ESTIMATE);
     if (!plan) {
-        plan = malloc(sizeof(fftw_plan));
-        if (!plan) {fprintf(stderr, "ERROR: Memory allocation for fftw_plan* failed.\n"); return NULL;}
-        *plan = fftw_plan_dft_r2c_2d(image->height, image->width, in, output, FFTW_ESTIMATE);
-        if (!*plan) {fprintf(stderr, "ERROR: fftw_plan generation failed."); return NULL;}
+        fprintf(stderr, "ERROR: fftw_plan generation failed.");
+        fftw_destroy_plan(plan);
+        return NULL;
     }
 
-    // 
     int fft_width = image->width/2+1;
     Image_RGB* fft_image = create_rgb_image(fft_width, image->height);
-    int i_tot = image->height * image->width;
+    int i_tot = fft_image->width * fft_image->height;
 
     // Execute fftw for red, collect magnitudes^2 in fft_image
-    memcpy(in, image->r, sizeof(double)*image->width*image->height);
-    fftw_execute(*plan);
+    memcpy(in, image->r, sizeof(double) * image->width * image->height);
+    fftw_execute(plan);
     for (int i=0; i<i_tot; i++) {
         fft_image->r[i] = output[i][0]*output[i][0] + output[i][1]*output[i][1];
     }
 
     // Execute fftw for green, collect magnitudes^2 in fft_image
     memcpy(in, image->g, sizeof(double)*image->width*image->height);
-    fftw_execute(*plan);
+    fftw_execute(plan);
     for (int i=0; i<i_tot; i++) {
         fft_image->g[i] = output[i][0]*output[i][0] + output[i][1]*output[i][1];
     }
 
     // Execute fftw for green, collect magnitudes^2 in fft_image
     memcpy(in, image->b, sizeof(double)*image->width*image->height);
-    fftw_execute(*plan);
+    fftw_execute(plan);
     for (int i=0; i<i_tot; i++) {
         fft_image->b[i] = output[i][0]*output[i][0] + output[i][1]*output[i][1];
     }
 
-    fftw_destroy_plan(*plan);
-    free(plan), plan = NULL;
-    fftw_free(output); // Free output and input from memory
+    // Destroy plan, free memory, clean up threads and traces of FFTW
+    fftw_destroy_plan(plan);
     fftw_free(in);
+    in = NULL;
+    fftw_free(output);
+    output = NULL;
+    fftw_cleanup_threads();
+    fftw_cleanup();
 
     // Return final magnitude^2 fft image
     return fft_image;
@@ -504,7 +527,7 @@ Image_RGB* rgb_fft(Image_RGB* image, fftw_plan* plan) {
 char* create_path(const char* path, const char* request_string, const char* filetype) {
     // Request, get, and clean the filename
     char filename[40];
-    printf(request_string);
+    printf("%s\n", request_string);
     fgets(filename, sizeof(filename), stdin);
     int len = strlen(filename);
     if (len > 0 && filename[len-1] == '\n') {
@@ -568,7 +591,7 @@ Lookup_1D* get_fft_normalizer_lookup() {
 
     // Initialize Lookup_1D table to proper size
     Lookup_1D* fft_normalizer_lookup = malloc(sizeof(Lookup_1D));
-    if (fscanf(file, "%u\n", fft_normalizer_lookup->length) != 1) { // Read the length
+    if (fscanf(file, "%u\n", &fft_normalizer_lookup->length) != 1) { // Read the length
         fprintf(stderr, "Error reading length.\n");
         return false;
     }
@@ -587,6 +610,13 @@ Lookup_1D* get_fft_normalizer_lookup() {
             return NULL;
         }
     }
+    #ifdef DEBUG    // Print the values that were returned
+        for (int i=0; i<fft_normalizer_lookup->length; i++) {
+            fprintf(stderr, "input[%d]: %lf\toutput[%d]: %lf\n", 
+            i, fft_normalizer_lookup->input[i], i, fft_normalizer_lookup->output[i]);
+        }
+    #endif
+
     fclose(file);
     return fft_normalizer_lookup;
 }
@@ -626,32 +656,35 @@ void rgb_normalize_fft(Image_RGB* fft, Lookup_1D* fft_normalizer_lookup) {
     double min = max;
 
     // Set maximum and minimum values
-    int tot_i = fft->height * fft->width;
-    for (int i=0; i<tot_i; i++) {
+    int i_tot = fft->height * fft->width;
+    for (int i=0; i<i_tot; i++) {
         double r_pixel = fft->r[i]; // Set temporary values for efficiency
         double g_pixel = fft->g[i];
         double b_pixel = fft->b[i];
-        if (max < r_pixel) {max = r_pixel;}
+        if (max < r_pixel) {max = r_pixel; max_index = i;}
         if (max < g_pixel) {max = g_pixel;}
         if (max < b_pixel) {max = b_pixel;}
-        if (DEBUG) {    // Minimum value is not necessary outside of debugging
+        #ifdef DEBUG    // Minimum value is not necessary outside of debugging
             if (min > g_pixel) {min = g_pixel;}
             if (min > r_pixel) {min = r_pixel;}
             if (min > b_pixel) {min = b_pixel;}
-        }
+        #endif
     }
 
-    if(DEBUG) { // Show max and min values pre-normalization
+    #ifdef DEBUG    // Show max and min values pre-normalization
+        fprintf(stderr, "Maximum value: r[%d]: %lf\n", max_index, fft->r[max_index]);
         printf("Maximum value found in the NOT normalized FFT: %f\n", max);
         printf("Minimum value found in the NOT normalized FFT: %f\n", min);
-    }
+    #endif
 
     // Scale back to range of values [0,1]
-    for (int i=0; i<tot_i; i++) {
+    for (int i=0; i<i_tot; i++) {
         fft->r[i] = fft->r[i] / max;
         fft->g[i] = fft->g[i] / max;
         fft->b[i] = fft->b[i] / max;
     }
+
+    fprintf(stderr, "after dividing by max: %lf", fft->r[max_index]);
 
     // Get lookup table if not provided
     bool free_fft_normalizer_lookup = false;
@@ -662,7 +695,6 @@ void rgb_normalize_fft(Image_RGB* fft, Lookup_1D* fft_normalizer_lookup) {
     bool r_found = false;   // bools to track whether a comparison should even occur
     bool g_found = false;
     bool b_found = false;
-    int i_tot = fft->height * fft->width;   // Stop iteration at 1D image boundary
     for (int i=0; i<i_tot; i++) {   // For every value in the fft
         for (int j=0; j<fft_normalizer_lookup->length; j++) {
             // Iterate over the lookup table to find new mapped values for r, g, and b components.
@@ -671,16 +703,21 @@ void rgb_normalize_fft(Image_RGB* fft, Lookup_1D* fft_normalizer_lookup) {
             // with the input value from the lookup table. If the component value is less than 
             // the lookup input value, map it to the corresponding output value from the 
             // lookup table and mark the component as found.
-            if (!r_found && fft_normalizer_lookup->input[j] < fft->r[i]) {
-                fft->r[i] = fft_normalizer_lookup->output[j-1];
+            if (!r_found && fft_normalizer_lookup->input[j] > fft->r[i]) {
+                #ifdef DEBUG
+                    fprintf(stderr, "input[%d]: %lf\tr[%d]: %lf\toutput[%d]: %lf\n",
+                    i, fft_normalizer_lookup->input[j], i, fft->r[i],
+                    i, fft_normalizer_lookup->output[j]);
+                #endif
+                fft->r[i] = fft_normalizer_lookup->output[j];
                 r_found = true;
             }
-            if (!g_found && fft_normalizer_lookup->input[j] < fft->g[i]) {
-                fft->g[i] = fft_normalizer_lookup->output[j-1];
+            if (!g_found && fft_normalizer_lookup->input[j] > fft->g[i]) {
+                fft->g[i] = fft_normalizer_lookup->output[j];
                 g_found = true;
             }
-            if (!b_found && fft_normalizer_lookup->input[j] < fft->b[i]) {
-                fft->b[i] = fft_normalizer_lookup->output[j-1];
+            if (!b_found && fft_normalizer_lookup->input[j] > fft->b[i]) {
+                fft->b[i] = fft_normalizer_lookup->output[j];
                 b_found = true;
             }
             if (r_found && g_found && b_found) {
@@ -695,14 +732,13 @@ void rgb_normalize_fft(Image_RGB* fft, Lookup_1D* fft_normalizer_lookup) {
 
     free_1D_lookup_table(fft_normalizer_lookup);
 
-    if(DEBUG) {
+    #ifdef DEBUG
         // Set Minimums and Maximums as any valid value
-        double max = fft->r[0];
-        double min = max;
+        max = fft->r[0];
+        min = max;
 
         // Set maximum and minimum values
-        int tot_i = fft->height * fft->width;
-        for (int i=0; i<tot_i; i++) {
+        for (int i=0; i<i_tot; i++) {
             double r_pixel = fft->r[i]; // Set temporary values for efficiency
             double g_pixel = fft->g[i];
             double b_pixel = fft->b[i];
@@ -716,7 +752,7 @@ void rgb_normalize_fft(Image_RGB* fft, Lookup_1D* fft_normalizer_lookup) {
 
         printf("Maximum value found in the normalized FFT: %f\n", max);
         printf("Minimum value found in the normalized FFT: %f\n", min);
-    }
+    #endif
 }
 
 
@@ -789,7 +825,7 @@ Image_RGB* fft_shift(Image_RGB* fft) {
     int half_height_plus_compensator = half_fft_height+height_compensator;
     int fft_width = fft->width;
     for (int y=0; y<half_height_plus_compensator; y++) {
-        for (int x=0; x<fft->width; x++) {
+        for (int x=0; x<fft_width; x++) {
             /*** Swap Q1 and Q4 ***/
             y_val = y+half_fft_height, x_val = x, validate_coordinates(fft, x_val, y_val, &errors);
             // New Q1 gets old Q4
@@ -838,17 +874,20 @@ Image_RGB* fft_shift(Image_RGB* fft) {
 
 
 /******************************************************************************
- * free_image_rgb frees all memory taken by an Image_RGB*
+ * free_image_rgb frees all memory taken by an Image_RGB* and the image itself.
+ *  -In the end it nullifies image as well, so there is no need for image=NULL.
 ******************************************************************************/
 void free_image_rgb(Image_RGB* image) {
-    free(image->r), image->r = NULL;
-    free(image->g), image->g = NULL;
-    free(image->b), image->b = NULL;
+    free(image->r); image->r = NULL;
+    free(image->g); image->g = NULL;
+    free(image->b); image->b = NULL;
     free(image); image = NULL;
 }
 
 
 int main() {
+    num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+    fprintf(stderr, "num_cores: %d\n", num_cores);
     Image_RGB* image;
     {   // read in user's desired image from the list of readable .txt files
         char* input_filename = create_path("images/readable/", "Enter the name of the .txt file you wish to use: ", ".txt");
@@ -862,10 +901,15 @@ int main() {
     Image_RGB* fft;
     Image_RGB* fft_image;
     {   // Compute the FFT for RGB image
-        fft = rgb_fft(image, NULL);
+        fft = rgb_fft(image);
         rgb_normalize_fft(fft, NULL);
         fft_image = fft_shift(fft);
         free_image_rgb(fft), fft = NULL;
+        for(int i=0; i<(fft_image->height*fft_image->width); i++) {
+            if (fft_image->r[i] > 0.004f) {
+                fprintf(stderr, "fft->r[%d]: %lf\n", i, fft_image->r[i]);
+            }
+        }
     }
 
     {   // write fft_image to user's desired image file (in .txt format for python to save via imageSaver.py)
