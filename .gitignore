@@ -27,3 +27,9 @@ CMakeLists.txt
 # Ignore system specific files
 .DS_Store
 Thumbs.db
+
+PhotoHive-DSP
+fftw-3.3.10/
+images/
+refactor_1D.c
+valgrind-out.txt
