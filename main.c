@@ -5,10 +5,12 @@
 #include <fftw3.h>
 #include <math.h>
 #include <stdbool.h>
+#include <pthread.h>
 
 #define DEBUG
 #define FFT_NORMALIZER_LOOKUP_SIZE 256
-
+#define PI 3.14159265
+#define RAD2DEG (180 / PI)
 
 typedef double Pixel;   // Official data type for pixels.
 
@@ -27,8 +29,9 @@ typedef struct Lookup_1D {
 
 /******************************************************************************
  * Image_RGB holds a 2D image of RGB pixels.
+ *  -Image_RGB is meant to hold r,g,b values as decimal numbers range [0, 1].
  *  -Effective as both an FFT representation and a literal image.
- *  -Cannot hold complex values
+ *  -Cannot hold complex values.
  *  -The separation of R,G, and B channels is built for efficiency in filtering
  *   and FFT computation, understanding the slightly higher complexity in image
  *   representation.
@@ -41,6 +44,25 @@ typedef struct Image_RGB {
     Pixel* g;
     Pixel* b;
 } Image_RGB;
+
+
+/******************************************************************************
+ * Image_HSV operates the same as Image_RGB, except that it is an HSV format,
+ *   obviously!
+ *  -The reason for separating the types is to facilitate static typing, as
+ *   many functions are built to operate for HSV or RGB images exclusively.
+ *  -The separation of H, S, and V channels is built for computational
+ *   efficiency, understanding the slightly higher complexity in image
+ *   representation.
+ *  -The image is logically 2D, height by width, but is referenced as 1D, for
+ *   increased efficiency in reference. Proper indexing: img.color[y*width + x]
+******************************************************************************/
+typedef struct Image_HSV {
+    unsigned int height, width;
+    Pixel* h;
+    Pixel* s;
+    Pixel* v;
+} Image_HSV;
 
 
 /******************************************************************************
@@ -120,8 +142,7 @@ int max_index;
  *   the center-left side.
 ******************************************************************************/
 Cartesian_To_Polar* cartesian_to_polar_conversion(unsigned int width, unsigned int height) {
-    Polar_Coord coord;
-    Cartesian_To_Polar* conversion = (Cartesian_To_Polar*)malloc(sizeof(Cartesian_To_Polar*));
+    Cartesian_To_Polar* conversion = (Cartesian_To_Polar*)malloc(sizeof(Cartesian_To_Polar));
     if (!conversion) {
         fprintf(stderr, "ERROR: Memory allocation for Cartesion_To_Polar conversion table failed.\n");
         return NULL;
@@ -133,17 +154,19 @@ Cartesian_To_Polar* cartesian_to_polar_conversion(unsigned int width, unsigned i
         return NULL;
     }
     int half_height = height/2;
+    int y_times_width = 0;
     for (int y=0; y<height/2; y++) {    // height/2 for symmetry across x axis
         for (int x=0; x<width; x++) {
             int r_sq = x*x+y*y;
-            double phi = atan(y/x);
-            // Not fft shifted, so for the top half, phi=-atan(y/x)
-            conversion->data[y + x].phi = -phi;
-            conversion->data[y + x].r_sq = r_sq;
-            // Not fft shifted, so for the bottom half phi=atan(y/x)
-            conversion->data[y + x].phi = phi;
-            conversion->data[y-half_height + x].r_sq = r_sq;
+            double phi = atan2(y, x);
+            // Not fft shifted, so for the top half, phi=-atan2(y, x)
+            conversion->data[y_times_width + x].phi = -phi;
+            conversion->data[y_times_width + x].r_sq = r_sq;
+            // Not fft shifted, so for the bottom half phi=atan2(y, x)
+            conversion->data[(height-1-y)*width + x].phi = phi;
+            conversion->data[(height-1-y)*width + x].r_sq = r_sq;
         }
+        y_times_width += width;
     }
     return conversion;
 }
@@ -214,7 +237,8 @@ Blur_Profile_RGB* calculate_blur_profile(
     profile->num_angle_bins = num_angle_bins;
     profile->num_radius_bins = num_radius_bins;
     profile->angle_bin_size = (double)(180 / num_angle_bins);
-    profile->radius_bin_size = (double)(fft->width / num_radius_bins);
+    double max_radius = sqrt(fft->width*fft->width + fft->height*fft->height/4);
+    profile->radius_bin_size = (double)(max_radius / num_radius_bins);
     double radius_bin_size_sq = profile->radius_bin_size*profile->radius_bin_size;
 
     // Allocate space for empty bins
@@ -225,7 +249,7 @@ Blur_Profile_RGB* calculate_blur_profile(
         fprintf(stderr, "ERROR: Memory allocation failed for r,g, or b bins.\n");
         return NULL;
     }
-    for (int i=0; i<num_radius_bins; i++) {
+    for (int i=0; i<num_angle_bins; i++) {
         profile->r_bins[i] = (Bin*)calloc(num_radius_bins, sizeof(Bin));
         profile->g_bins[i] = (Bin*)calloc(num_radius_bins, sizeof(Bin));
         profile->b_bins[i] = (Bin*)calloc(num_radius_bins, sizeof(Bin));
@@ -238,17 +262,39 @@ Blur_Profile_RGB* calculate_blur_profile(
     const Pixel* r = fft->r;    // locally store array pointers to assure high performance in dereferencing
     const Pixel* g = fft->g;
     const Pixel* b = fft->b;
+    double max_phi = 0;
+
+    // bin_quant counts number of pixels in each bin so the avg can be calculated
+    int** bin_quant = (int**)malloc(num_angle_bins* sizeof(int*));
+    for (int i=0; i<num_angle_bins; i++) {
+        bin_quant[i] = (int*)calloc(num_radius_bins, sizeof(int));
+    }
+
     for (int i=0; i<i_tot; i++) {
         // Store r_sq and phi for readability
         int r_sq = conversion->data[i].r_sq;
         double phi = conversion->data[i].phi;
+        if (max_phi < phi) max_phi = phi;
         // phi_bin is found by int division of the phi value by the bin size
-        int phi_bin = (int)phi/profile->angle_bin_size;
+        // +num_angle_bins/2 to normalize the phi range of [-90deg, 90deg) to [0, num_angle_bins]
+        int phi_bin = (int)((phi+PI*0.5f)/PI * (double)(profile->num_angle_bins-1));
         // r_bin is sqrt(r^2/r_bin_size^2), but a newton int approximation
         int r_bin = newton_int_sqrt((double)r_sq/radius_bin_size_sq);
+        bin_quant[phi_bin][r_bin]++;    // Increment the counter for how many pixels have been assigned to this bin
         profile->r_bins[phi_bin][r_bin] += r[i];    // Profile not locally stored like fft members because
         profile->g_bins[phi_bin][r_bin] += g[i];    // due to small size, it will likely all be stored in
         profile->b_bins[phi_bin][r_bin] += b[i];    // CPU cache anyway. Access should be inexpensive
+    }
+
+    // Divide by the number of bins
+    Bin bin_quantity;
+    for (int phi_bin=0; phi_bin<num_angle_bins; phi_bin++) {
+        for (int r_bin=0; r_bin<num_radius_bins; r_bin++) {
+            bin_quantity = (Bin)bin_quant[phi_bin][r_bin];
+            profile->r_bins[phi_bin][r_bin] /= bin_quantity;
+            profile->g_bins[phi_bin][r_bin] /= bin_quantity;
+            profile->b_bins[phi_bin][r_bin] /= bin_quantity;
+        }
     }
     return profile;
 }
@@ -269,7 +315,7 @@ Image_RGB* create_rgb_image(unsigned int width, unsigned int height) {
         fprintf(stderr, "ERROR: create_rgb_image received width == 0.\n");
         return NULL;
     }
-    Image_RGB* image = (Image_RGB*)malloc(sizeof(Image_RGB));
+    Image_RGB* image = (Image_RGB*)calloc(1, sizeof(Image_RGB));
     if (!image) {   // Throw error and return NULL if malloc failed
         fprintf(stderr, "ERROR: Memory allocation for Image_RGB failed.\n");
         return NULL;
@@ -285,7 +331,41 @@ Image_RGB* create_rgb_image(unsigned int width, unsigned int height) {
         return NULL;
     }
     return image;
-}   
+}
+
+
+/******************************************************************************
+ * create_hsv_image creates an image of given width and height, being a pointer
+ *   to an Image_HSV data-type.
+ *  -Function initializes all pixels to 0.
+ *  -Function returns NULL if any allocations fail
+ *  -Function returns NULL if height or width are equal to 0.
+******************************************************************************/
+Image_HSV* create_hsv_image(unsigned int width, unsigned int height) {
+    if (!height) {  // If height is 0, throw error and return NULL
+        fprintf(stderr, "ERROR: create_rgb_image received height==0.\n");
+        return NULL;
+    } else if (!width) {   // If width is 0, throw error and return NULL
+        fprintf(stderr, "ERROR: create_rgb_image received width == 0.\n");
+        return NULL;
+    }
+    Image_HSV* image = (Image_HSV*)calloc(1, sizeof(Image_HSV));
+    if (!image) {   // Throw error and return NULL if malloc failed
+        fprintf(stderr, "ERROR: Memory allocation for Image_RGB failed.\n");
+        return NULL;
+    }
+    image->width = width;
+    image->height = height;
+    // allocate memory for rgb channels, initialized to 0.0
+    image->h = (Pixel*)calloc(height * width, sizeof(Pixel));
+    image->s = (Pixel*)calloc(height * width, sizeof(Pixel));
+    image->v = (Pixel*)calloc(height * width, sizeof(Pixel));
+    if (!image->h || !image->s || !image->v){   // Return NULL if callocs failed
+        fprintf(stderr, "ERROR: Memory allocation for RGB channel pixels failed.\n");
+        return NULL;
+    }
+    return image;
+}
 
 
 /******************************************************************************
@@ -657,7 +737,7 @@ void rgb_normalize_fft(Image_RGB* fft, Lookup_1D* fft_normalizer_lookup) {
     }
 
     #ifdef DEBUG
-        printf("Maximum value found in the normalized FFT: %f\n", max);
+        printf("Maximum value found in the raw FFT: %f\n", max);
     #endif
     
     // Set G_s
@@ -820,34 +900,342 @@ void free_image_rgb(Image_RGB* image) {
 }
 
 
-int main() {
-    num_cores = sysconf(_SC_NPROCESSORS_ONLN);
-    fprintf(stderr, "num_cores: %d\n", num_cores);
-    Image_RGB* image;
-    {   // read in user's desired image from the list of readable .txt files
-        char* input_filename = create_path("images/readable/", "Enter the name of the .txt file you wish to use: ", ".txt");
-        image = read_image(input_filename);
-        free(input_filename), input_filename = NULL;
-        if (image == NULL) {
-            return -1;
+/******************************************************************************
+ * free_image_hsv frees all memory taken by an Image_HSV* and the image itself.
+ *  -In the end it nullifies image as well, so there is no need for hsv=NULL.
+******************************************************************************/
+void free_image_hsv(Image_HSV* hsv) {
+    free(hsv->h); hsv->h = NULL;
+    free(hsv->s); hsv->s = NULL;
+    free(hsv->v); hsv->v = NULL;
+    free(hsv); hsv = NULL;
+}
+
+
+/******************************************************************************
+ * get_blur_profile_visual creates an Image_RGB* that represents the contents
+ *   of a measured blur_profile visually.
+ *  -height should be the fft height
+ *  -width should be the fft widht
+ *  -The user may choose to change the height and width, but should make sure
+ *   that their aspect ratio stays the same
+ *  -The outputted image should look like a radially pixelated version of the
+ *   actual fft, and as num_radius_bins and num_angle_bins increases it should
+ *   come to approximate the fft itself.
+******************************************************************************/
+Image_RGB* get_blur_profile_visual(Blur_Profile_RGB* blur_profile, 
+                                   Cartesian_To_Polar* conversion, 
+                                   int height, int width) {
+    // Allocate memory for an RGB image, with height and width
+    Image_RGB* output_image = create_rgb_image(width, height);
+    if (!output_image) {
+        fprintf(stderr, "Error creating output image.\n");
+        return NULL;
+    }
+    int y_times_width = 0;
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            double deltaX = x;
+            double deltaY;
+            if (y<height/2) deltaY = -y;
+            else deltaY = height - y;
+
+            double r = sqrt(deltaX * deltaX + deltaY * deltaY);
+            double phi = atan2(deltaY, deltaX);
+            // if (phi < 0) phi += 360; // Normalize phi to [0, 360) range
+
+            int r_bin = (int)(r / blur_profile->radius_bin_size);
+            if (r_bin >= blur_profile->num_radius_bins) r_bin = blur_profile->num_radius_bins - 1;
+
+            // +num_angle_bins/2 to normalize possible angles from [-90deg, 90deg) to [0, num_angle_bins]
+            int phi_bin = (int)((phi+PI*0.5f)/PI * (double)(blur_profile->num_angle_bins-1));
+
+            if (phi_bin >= blur_profile->num_angle_bins) {
+                phi_bin = blur_profile->num_angle_bins - 1;
+            }
+            if (phi_bin < 0){
+                phi_bin = 0;
+            }
+
+            // Direct assignment without inappropriate mirroring
+            output_image->r[y_times_width + x] = blur_profile->r_bins[phi_bin][r_bin];
+            output_image->g[y_times_width + x] = blur_profile->g_bins[phi_bin][r_bin];
+            output_image->b[y_times_width + x] = blur_profile->b_bins[phi_bin][r_bin];
         }
+        y_times_width += width;
+    }
+    return output_image;
+}
+
+
+void view_2d_array_contents(Bin** array, int height, int width) {
+    for (int i=0; i<height; i++) {
+        for (int j=0; j<width; j++) {
+            printf("%d, ", (int)(array[i][j]*255.0f));
+        }
+        printf("\n");
+    }
+    printf("\n");
+}
+
+
+/******************************************************************************
+ * rgb2hsv creates a new hsv image from the pixels of an rgb image.
+******************************************************************************/
+Image_HSV* rgb2hsv(Image_RGB* rgb) {
+    if (!rgb) {
+        fprintf(stderr, "ERROR: rgb2hsv() recieved a null pointer to rgb.");
+        return NULL;
+    }
+    // Set height and width to be used
+    unsigned short height = rgb->height;
+    unsigned short width = rgb->width;
+    // Initialize 3-channel image as hsv, with all 0s
+    Image_HSV* hsv = (Image_HSV*)create_hsv_image(width, height);
+    // Iterate through every pixel
+    unsigned int i_tot = height*width;
+    for (int i=0; i<i_tot; i++) {
+        // Set necessary values
+        Pixel r = rgb->r[i], g = rgb->g[i], b = rgb->b[i];
+        Pixel max = fmax(fmax(r, g), b);
+        Pixel min = fmin(fmin(r, g), b);
+        Pixel delta = max - min;
+
+        // Set H value
+        Pixel h;
+        if (delta == 0) {h = 0;}    // Textbook equation for rgb->h conversion
+        else if (max == r) {h = 60 * ((g-b)/delta);}
+        else if (max == g) {h = 60 * (2+(b-r)/delta);}
+        else {h = 60 * (4+(r-g)/delta);}
+        if (0<h && h<360) {;}   // if within range, continue forward
+        else if (h<0) {     // if h is too low
+            while (h<0) {h += 360;} // bring it up until within range
+        }
+        else if (h>360) {   // if h is too high
+            while (h > 360) {h -= 360;} // bring it down until within range
+        }
+        hsv->h[i] = h;
+        
+        // Set V value
+        hsv->v[i] = max;
+
+        // Set S value
+        if (max==0) {hsv->s[i] = 0;}
+        else {hsv->s[i] = delta/max;}
+    }
+    return hsv;
+}
+
+
+/******************************************************************************
+ * hsv2rgb creates a new rgb image from the pixels of an hsv image.
+******************************************************************************/
+Image_RGB* hsv2rgb(Image_HSV* hsv) {
+    if (!hsv) {
+        fprintf(stderr, "ERROR: hsv2rgb() recieved a null pointer to rgb.");
+        return NULL;
+    }
+    unsigned short height = hsv->height;
+    unsigned short width = hsv->width;
+
+    // Initialize 3-channel image as rgb, assuming create_rgb_image is similar to create_hsv_image
+    Image_RGB* rgb = (Image_RGB*)create_rgb_image(width, height);
+    if (!rgb) return NULL; // Check if memory allocation failed
+
+    unsigned int i_tot = height * width;
+    for (unsigned int i = 0; i < i_tot; i++) {
+        float h = hsv->h[i];
+        float s = hsv->s[i];
+        float v = hsv->v[i];
+
+        float c = v * s; // Chroma
+        float x = c * (1 - fabsf(fmodf(h / 60.0, 2) - 1));
+        float m = v - c;
+        
+        float rs, gs, bs;
+        if (h >= 0 && h < 60) {
+            rs = c; gs = x; bs = 0;
+        } else if (h >= 60 && h < 120) {
+            rs = x; gs = c; bs = 0;
+        } else if (h >= 120 && h < 180) {
+            rs = 0; gs = c; bs = x;
+        } else if (h >= 180 && h < 240) {
+            rs = 0; gs = x; bs = c;
+        } else if (h >= 240 && h < 300) {
+            rs = x; gs = 0; bs = c;
+        } else {
+            rs = c; gs = 0; bs = x;
+        }
+        
+        // Assign computed values to the RGB image
+        rgb->r[i] = rs + m;
+        rgb->g[i] = gs + m;
+        rgb->b[i] = bs + m;
     }
 
-    Image_RGB* fft;
-    {   // Compute the FFT for RGB image
-        fft = rgb_fft(image);
-        rgb_normalize_fft(fft, NULL);
-        free_image_rgb(image), image=NULL;
+    return rgb;
+}
+
+
+/******************************************************************************
+ * free_cartesian_to_polar frees the memory of Cartesian_To_Polar objects.
+******************************************************************************/
+void free_cartesian_to_polar(Cartesian_To_Polar* c2p) {
+    if (c2p) {
+        free(c2p->data);
+        c2p->data = NULL;
+        free(c2p);
+    }
+}
+
+
+/******************************************************************************
+ * blur_profile_tests takes an fft and saves the blur_profile visualization.
+ *  -Function is used for development, as it prompts the user for command-line
+ *   inputs.
+******************************************************************************/
+void blur_profile_tests(Image_RGB* fft) {
+    // Calculate bin-approximated FFT
+    Cartesian_To_Polar* conversion;   // Create cartesian to polar conversion
+    conversion = cartesian_to_polar_conversion(fft->width, fft->height);
+    int num_radius_bins = 4;    // Set up pseudo-hyperparameters
+    int num_angle_bins = 18;
+    Blur_Profile_RGB* blur_profile; // Calculate the blur profile
+    blur_profile = calculate_blur_profile(conversion, fft, num_radius_bins, num_angle_bins);
+
+    // Create image representation of bin-approximated FFT
+    Image_RGB* blur_profile_visualization = get_blur_profile_visual(blur_profile, conversion, fft->height, fft->width);
+
+    // Save image representation of bin-approximated FFT
+    const char* path = "images/visualizations/";
+    const char* q = "\nEnter visualization filename: ";
+    char* visualization_filename = create_path(path, q, ".txt");
+    write_image_to_file(blur_profile_visualization, visualization_filename);
+
+    // Free all function data
+    free_cartesian_to_polar(conversion);
+    free(visualization_filename), visualization_filename = NULL;
+    free_image_rgb(blur_profile_visualization);
+}
+
+
+/******************************************************************************
+ * compute_magnitude_fft returns an Image_RGB* to a normalized fft, given an
+ *   rgb image.
+******************************************************************************/
+Image_RGB* compute_magnitude_fft(Image_RGB* image) {
+    Image_RGB* fft = rgb_fft(image);
+    rgb_normalize_fft(fft, NULL);
+    return fft;
+}
+
+/******************************************************************************
+ * save_fft writes an fft image to user's desired image file (in .txt format 
+ *   for python to save via imageSaver.py).
+ *  -Function is designed for development, as it prompts users for command-line
+ *   input.
+******************************************************************************/
+void save_fft(Image_RGB* fft) {
+    const char* q = "Enter the name of the .txt file you wish to write to: ";
+    char* output_filename = create_path("images/output/", q, ".txt");
+    write_image_to_file(fft, output_filename);
+    free(output_filename), output_filename = NULL;
+}
+
+
+/******************************************************************************
+ * save_rgb writes an rgb image to user's desired image file (in .txt format 
+ *   for python to save via imageSaver.py).
+ *  -Function is designed for development, as it prompts users for command-line
+ *   input.
+******************************************************************************/
+void save_rgb(Image_RGB* rgb) {
+    const char* q = "\nEnter an RGB image filename: ";
+    char* output_filename = create_path("images/output/", q, ".txt");
+    write_image_to_file(rgb, output_filename);
+    free(output_filename), output_filename = NULL;
+}
+
+
+/******************************************************************************
+ * read_image_from_files reads in user's desired image from the list of
+ *   readable .txt files
+ *  -Function is designed for development, as it prompts users for command-line
+ *   input.
+******************************************************************************/
+Image_RGB* read_image_from_files() {
+    const char* q = "\nEnter an RGB image filename: ";
+    char* input_filename = create_path("images/readable/", q, ".txt");
+    Image_RGB* image = read_image(input_filename);
+    free(input_filename), input_filename = NULL;
+    return image;
+}
+
+
+// Initialization to work with CPU cores
+int threading_setup() {
+    int num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+}
+
+
+/******************************************************************************
+ * downsample_rgb returns a downsampled image from the image given.
+ *  -Function uses the simple subsampling method
+ *  -Function does NOT anti-alias the image prior to downsampling. If the image
+ *   is meant to be displayed or operated on in the spacial domain or frequency
+ *   domain, user must low-pass filter the image prior to downsampling.
+ *  -Image_RGB* image is the rgb image to be downsampled
+ *  -N is the interval at which pixels are sampled, in 2D. One pixel after
+ *   downsampling attempts to describe an NxN square of pixels.
+******************************************************************************/
+Image_RGB* downsample_rgb(Image_RGB* image, unsigned short N) {
+    // Create image for decimation
+    int height = image->height; int width = image->width;
+    int new_height = image->height/N; int new_width = image->width/N;
+    Image_RGB* new_image = create_rgb_image(new_width, new_height);
+
+    // Add every NxN pixel from image to new image
+    int y_old_increment = (N - 1)*width - new_width*N
+    int i_old = 0;
+    int i_new = 0;
+    for(int y=0; y<new_height; y++) {
+        for (int x=0; x<new_width; x++) {
+            new_image->r[i_new] = image->r[i_old];
+            new_image->g[i_new] = image->g[i_old];
+            new_image->b[i_new] = image->b[i_old];
+            i_old += N;
+            i_new++;
+        }
+        i_old += y_old_increment;
     }
 
-    {   // write fft_image to user's desired image file (in .txt format for python to save via imageSaver.py)
-        char* output_filename = create_path("images/output/", "Enter the name of the .txt file you wish to write to: ", ".txt");
-        write_image_to_file(fft, output_filename);
-        free(output_filename), output_filename = NULL;
-    }
+    return new_image;
+}
 
-    // Free original image last since it's used periodically during runtime.
-    free_image_rgb(fft), fft = NULL;
 
+int main() {
+    // Get image from files
+    Image_RGB* image = read_image_from_files();
+
+    // Downsample image haphazardly
+    // Image_RGB* downsampled = downsample_rgb(image, 10);
+
+    // Save new rgb
+    // save_rgb(downsampled);
+
+    // Compute the FFT for RGB image
+    // Image_RGB* fft = compute_magnitude_fft(image);
+
+    // Save fft image to .txt file
+    // save_fft(fft);
+    
+    // Run blur_profile code
+    // blur_profile_tests(fft);
+
+    // Free data
+    // free_image_rgb(fft), fft = NULL;
+
+    // free_image_rgb(downsampled);
+    free_image_rgb(image), image=NULL;
     return 0;
 }
