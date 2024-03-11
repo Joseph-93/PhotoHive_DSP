@@ -47,6 +47,19 @@ typedef struct Image_RGB {
 
 
 /******************************************************************************
+ * Pixel_HSV contains a pixel for an HSV image, specifically designed for
+ *   octree grouping in color quantization.
+ *  -parent_id is the id of the parent octree node for which the pixel belongs.
+******************************************************************************/
+typedef struct Pixel_HSV {
+    int parent_id;
+    double h;
+    double s;
+    double v;
+} Pixel_HSV;
+
+
+/******************************************************************************
  * Image_HSV operates the same as Image_RGB, except that it is an HSV format,
  *   obviously!
  *  -The reason for separating the types is to facilitate static typing, as
@@ -59,10 +72,90 @@ typedef struct Image_RGB {
 ******************************************************************************/
 typedef struct Image_HSV {
     unsigned int height, width;
-    Pixel* h;
-    Pixel* s;
-    Pixel* v;
+    Pixel_HSV* pixels;
 } Image_HSV;
+
+
+/******************************************************************************
+ * Octree is necessary for keeping track of octree groups contained.
+ *  -valid_parents: an array of valid parent_id values. valid parents are
+ *   parents which are part of the color palette.
+ *  -groups: pointer to an array of all octree groups
+ *  -Lh: length of each normal (non gray or black) group in hue dimension.
+ *  -Ls: length of each normal (non gray or black) group in saturation dimension.
+ *  -Lv: length of each normal (non gray or black) group in value dimension.
+ *  -num_h: number of normal (non gray or black) group partitions in hue
+ *   dimension. In other words, it is the maximum h index available.
+ *  -num_s: number of normal (non gray or black) group partitions in saturation
+ *   dimension. In other words, it is the maximum s index available.
+ *  -num_v: number of normal (non gray or black) group partitions in value
+ *   dimension. In other words, it is the maximum v index available.
+ *  -num_grays: the number of gray groups built into the octree. Gray groups are
+ *   automatically placed after all normal groups.
+ *  -total_length: the total length of the groups array, including gray and
+ *   black. always set total_length = Lh*Ls*Lv + num_grays. 
+ *  -black_thresh: the value which automatically puts a pixel into the black
+ *   octree groups.
+ *  -gray_thresh: the saturation which automatically puts a pixel into the gray
+ *   octree groups, so long as said pixel's value > black_thresh.
+ *  -NOTE: There is always a black node, which will always be located at the
+ *   back of the array.
+ *  -NOTE: Group indexing is a complex task. For reference, to reference the
+ *   i-th index in normal groups, i = h_ind*(Ls*Lv) + s_ind*Lv + v_ind.
+ *   To index gray groups, i=Lh*Ls*Lv+gray_i OR i=total_length-num_grays+gray_i
+ *   To index the black node, i = Lh*Ls*Lv + num_grays OR i=total_length-1.
+******************************************************************************/
+typedef struct Octree {
+    Octree_Group* groups;
+    int* valid_parents;
+    int len_valid_parents;
+    double Lh, Ls, Lv;
+    int num_h, num_s, num_v;
+    int num_grays;
+    int total_length;
+    Pixel black_thresh, gray_thresh;
+} Octree;
+
+
+/******************************************************************************
+ * Octree_Group is the struct that Octree.groups points to.
+ *  -id is self-explanatory
+ *  -quantity is the number of pixels that belong to the group.
+ *  -h, s, v are designed to be the "average" color described by the nodes
+ *   within the group. At first it is automatically assigned, but later must
+ *   be set to the average H,S,V values of its children.
+ *  -head is the pointer to the HSV_Linked_List head.
+ *  -is_valid_parent should default to false, but is set to true if the group
+ *   is decided to be a valid parent.
+******************************************************************************/
+typedef struct Octree_Group {
+    int id;
+    int quantity;
+    double h, s, v;
+    HSV_Linked_List* head;
+    HSV_Linked_List* cur;
+    bool is_valid_parent;
+} Octree_Group;
+
+
+/******************************************************************************
+ * HSV_Linked_List is made to be pointed to by the Octree_Group. It allows the
+ *   the octree group to contain an undefined number of pixels for relatively
+ *   low computation and memory. 
+ *  -When the end of the linked list is reached, the user must allocate a new
+ *   HSV_Linked_List instance, point to it from this instance, and move the
+ *   pointer to the next instance.
+ *  -pixels is the array object
+ *  -i is the current iteration of the array which has NOT yet been filled.
+ *  -int num_pixels is the array size
+ *  -next is a pointer to the next linked list node
+******************************************************************************/
+typedef struct HSV_Linked_List {
+    Pixel_HSV* pixels;
+    int num_pixels;
+    int i;
+    HSV_Linked_List* next;
+} HSV_Linked_List;
 
 
 /******************************************************************************
@@ -130,7 +223,6 @@ typedef struct Blur_Profile_RGB {
  * GLOBAL VARIABLES
 ******************************************************************************/
 int num_cores;
-int max_index;
 
 
 /******************************************************************************
@@ -357,11 +449,9 @@ Image_HSV* create_hsv_image(unsigned int width, unsigned int height) {
     image->width = width;
     image->height = height;
     // allocate memory for rgb channels, initialized to 0.0
-    image->h = (Pixel*)calloc(height * width, sizeof(Pixel));
-    image->s = (Pixel*)calloc(height * width, sizeof(Pixel));
-    image->v = (Pixel*)calloc(height * width, sizeof(Pixel));
-    if (!image->h || !image->s || !image->v){   // Return NULL if callocs failed
-        fprintf(stderr, "ERROR: Memory allocation for RGB channel pixels failed.\n");
+    image->pixels = (Pixel_HSV*)calloc(height * width, sizeof(Pixel_HSV));
+    if (!image->pixels){   // Return NULL if callocs failed
+        fprintf(stderr, "ERROR: Memory allocation for HSV pixel array failed.\n");
         return NULL;
     }
     return image;
@@ -702,6 +792,7 @@ Lookup_1D* get_fft_normalizer_lookup() {
 }
 
 
+// Frees a Lookup_1D table and nullifies its pointer
 void free_1D_lookup_table(Lookup_1D* table) {
     free(table->input), table->input = NULL;
     free(table->output), table->input = NULL;
@@ -725,6 +816,7 @@ void free_1D_lookup_table(Lookup_1D* table) {
 void rgb_normalize_fft(Image_RGB* fft, Lookup_1D* fft_normalizer_lookup) {
     double max = fft->r[0];     // Set Maximum as any valid value
     int i_tot = fft->height * fft->width;   // Get stopping point
+    int max_index = 0;
 
     // Find maximum input
     for (int i=0; i<i_tot; i++) {
@@ -905,9 +997,7 @@ void free_image_rgb(Image_RGB* image) {
  *  -In the end it nullifies image as well, so there is no need for hsv=NULL.
 ******************************************************************************/
 void free_image_hsv(Image_HSV* hsv) {
-    free(hsv->h); hsv->h = NULL;
-    free(hsv->s); hsv->s = NULL;
-    free(hsv->v); hsv->v = NULL;
+    free(hsv->pixels); hsv->pixels = NULL;
     free(hsv); hsv = NULL;
 }
 
@@ -968,6 +1058,12 @@ Image_RGB* get_blur_profile_visual(Blur_Profile_RGB* blur_profile,
 }
 
 
+/******************************************************************************
+ * view_2d_array_contents simply prints out the values of a 2D array after
+ *   normalizing its values to the range [0,255].
+ *  -Assumes that the array is in the range [0,1].
+ *  -Height and width must be accurate (duh).
+******************************************************************************/
 void view_2d_array_contents(Bin** array, int height, int width) {
     for (int i=0; i<height; i++) {
         for (int j=0; j<width; j++) {
@@ -996,6 +1092,7 @@ Image_HSV* rgb2hsv(Image_RGB* rgb) {
     unsigned int i_tot = height*width;
     for (int i=0; i<i_tot; i++) {
         // Set necessary values
+        Pixel_HSV* cur = &hsv->pixels[i];
         Pixel r = rgb->r[i], g = rgb->g[i], b = rgb->b[i];
         Pixel max = fmax(fmax(r, g), b);
         Pixel min = fmin(fmin(r, g), b);
@@ -1014,14 +1111,14 @@ Image_HSV* rgb2hsv(Image_RGB* rgb) {
         else if (h>360) {   // if h is too high
             while (h > 360) {h -= 360;} // bring it down until within range
         }
-        hsv->h[i] = h;
+        cur->h = h;
         
         // Set V value
-        hsv->v[i] = max;
+        cur->v = max;
 
         // Set S value
-        if (max==0) {hsv->s[i] = 0;}
-        else {hsv->s[i] = delta/max;}
+        if (max==0) {cur->s = 0;}
+        else {cur->s = delta/max;}
     }
     return hsv;
 }
@@ -1044,15 +1141,16 @@ Image_RGB* hsv2rgb(Image_HSV* hsv) {
 
     unsigned int i_tot = height * width;
     for (unsigned int i = 0; i < i_tot; i++) {
-        float h = hsv->h[i];
-        float s = hsv->s[i];
-        float v = hsv->v[i];
+        Pixel_HSV cur = hsv->pixels[i];
+        Pixel h = cur.h;
+        Pixel s = cur.s;
+        Pixel v = cur.v;
 
-        float c = v * s; // Chroma
-        float x = c * (1 - fabsf(fmodf(h / 60.0, 2) - 1));
-        float m = v - c;
+        Pixel c = v * s; // Chroma
+        Pixel x = c * (1 - fabsf(fmodf(h / 60.0, 2) - 1));
+        Pixel m = v - c;
         
-        float rs, gs, bs;
+        Pixel rs, gs, bs;
         if (h >= 0 && h < 60) {
             rs = c; gs = x; bs = 0;
         } else if (h >= 60 && h < 120) {
@@ -1195,7 +1293,7 @@ Image_RGB* downsample_rgb(Image_RGB* image, unsigned short N) {
     Image_RGB* new_image = create_rgb_image(new_width, new_height);
 
     // Add every NxN pixel from image to new image
-    int y_old_increment = (N - 1)*width - new_width*N
+    int y_old_increment = (N - 1)*width - new_width*N;
     int i_old = 0;
     int i_new = 0;
     for(int y=0; y<new_height; y++) {
@@ -1210,6 +1308,219 @@ Image_RGB* downsample_rgb(Image_RGB* image, unsigned short N) {
     }
 
     return new_image;
+}
+
+
+/******************************************************************************
+ * initialize_octree sets up an octree according to hyperparamters and returns
+ *   a pointer to the octree.
+ *  -h_parts, s_parts, v_parts, and num_grays may not be 0.
+ *  -Function does NOT initialize valid_parents array, as it is not known upon
+ *   initialization. valid_parents will be NULL.
+******************************************************************************/
+Octree* initialize_octree(int h_parts, 
+                          int s_parts,
+                          int v_parts, 
+                          int num_grays, 
+                          double black_thresh,
+                          double gray_thresh) {
+    if (h_parts==0 || s_parts==0 || v_parts==0 || num_grays == 0) {
+        fprintf(stderr, "ERROR: initialize_octree() expects nonzero values for h_parts, s_parts, v_parts, and num_grays.\n");
+        return NULL;
+    }
+
+    // Create octree, set all measurement values
+    Octree* octree = (Octree*)malloc(sizeof(Octree));
+    if (!octree) {
+        fprintf(stderr, "ERROR: Malloc() of Octree failed.\n");
+        return NULL;
+    }
+    octree->total_length = h_parts*s_parts*v_parts+num_grays+1;
+    octree->num_h = h_parts;
+    octree->Lh = 360/h_parts;
+    octree->num_s = s_parts;
+    octree->Ls = (1-gray_thresh)/s_parts; // length(s) = (max_s - gray_thresh)/(number_s_parts)
+    octree->num_v = v_parts;
+    octree->Lv = (1-black_thresh)/v_parts; // length(v) = (max-black_thresh)/(number_v_parts)
+    octree->num_grays = num_grays;
+    octree->black_thresh = black_thresh;
+    octree->gray_thresh = gray_thresh;
+
+    // Create Octree Groups
+    octree->groups = (Octree_Group*)malloc(octree->total_length*sizeof(Octree_Group));
+    if (!octree->groups) {
+        fprintf(stderr, "ERROR: Malloc() of Octree_Group failed.\n");
+        return NULL;
+    }
+
+    // Initialize hue groups from h, s, and v partitions.
+    double half_h = octree->Lh/2;
+    double s_offs = octree->Ls/2 + gray_thresh;     // s_offs = len(s)/2 + gray_thresh
+    double v_offs = octree->Lv/2 + black_thresh;    // v_offs = len(v)/2 + black_thresh
+    int i;
+    for (int h=0; h<h_parts; h++) {
+        for (int s=0; s<s_parts; s++) {
+            for (int v=0; v<v_parts; v++) {
+                i = h*s_parts*v_parts + s*v_parts + v;
+                octree->groups[i].h = h*octree->Lh + half_h;
+                octree->groups[i].s = s*octree->Ls + s_offs;
+                octree->groups[i].v = v*octree->Lv + v_offs;
+                octree->groups[i].id = i;
+                octree->groups[i].quantity = 0;
+                octree->groups[i].head = NULL;
+            }
+        }
+    }
+
+    // Initialize gray groups
+    double L_gray = (1.0f-black_thresh)/(double)num_grays;
+    int total_length = octree->total_length;
+    for (int i=total_length-num_grays; i<total_length-1; i++) {
+        octree->groups[i].h = 0;
+        octree->groups[i].s = 0;
+        octree->groups[i].v = L_gray*i + black_thresh;
+        octree->groups[i].id = i;
+        octree->groups[i].quantity = 0;
+        octree->groups[i].head = NULL;
+    }
+    
+    // Initialize black group
+    octree->groups[total_length-1].h = 0;
+    octree->groups[total_length-1].s = 0;
+    octree->groups[total_length-1].v = 0;
+    octree->groups[total_length-1].id = total_length-1;
+    octree->groups[total_length-1].quantity = 0;
+    octree->groups[total_length-1].head = NULL;
+
+    return octree;
+}
+
+
+/******************************************************************************
+ * get_hsv_linked_list_node creates a new HSV_Linked_List with an array of 
+ *   arr_size. if it is unable to allocate memory, it prints an error to stderr
+ *   and returns NULL.
+ *  -arr_size > 0 is required. if arr_size < 0, Function returns an stderr and
+ *   a NULL pointer.
+******************************************************************************/
+HSV_Linked_List* get_hsv_linked_list_node(int arr_size) {
+    if (arr_size == 0) {
+        fprintf(stderr, "ERROR: get_hsv_linked_list_node() expected a positive arr_size");
+        return NULL;
+    }
+    HSV_Linked_List* node = (HSV_Linked_List*)calloc(1, sizeof(HSV_Linked_List));
+    if (!node) {
+        fprintf(stderr, "ERROR: failed to calloc node in get_hsv_linked_list_node()");
+        return NULL;
+    }
+    node->num_pixels = arr_size;
+    node->pixels = (Pixel_HSV*)calloc(arr_size, sizeof(Pixel_HSV));
+    if (!node->pixels) {
+        fprintf(stderr, "ERROR: failed to calloc pixels array in get_hsv_linked_list_node()");
+        return NULL;
+    }
+    return node;
+}
+
+
+/*****************************************************************************
+ * arm_octree assigns all pixels of an HSV image into the proper groups of the 
+ *   octree given.
+******************************************************************************/
+void arm_octree(Image_HSV* hsv, Octree* octree, int HSV_Linked_List_Size) {
+    // Create array of current octree group linked list nodes for use in the initialization.
+    HSV_Linked_List** list_curs = (HSV_Linked_List**)malloc(octree->total_length * sizeof(HSV_Linked_List*));
+    if (!list_curs) {
+        fprintf(stderr, "ERROR: arm_octree() failed to malloc list_curs.");
+        return NULL;
+    }
+    for (int i=0; i<octree->total_length; i++) {
+        // Set array values all to the heads of their respective linked lists.
+        list_curs[i] = octree->groups[i].head;
+    }
+
+    // Loop through all pixels
+    int i_tot = hsv->height * hsv->width;
+    for (int i=0; i<i_tot; i++) {
+        // Vi, Si, and Hi are index i trackers for H,S,V values.
+        int Vi, Si, Hi, g;
+        // If value is under black threshold, set g to the black grouping.
+        if (hsv->pixels[i].v < octree->black_thresh){
+            g = octree->total_length;
+        }
+        // if current pixel falls under gray groupings, set g to its proper gray grouping.
+        else if (hsv->pixels[i].v < octree->gray_thresh) {
+            Vi=(int)(hsv->pixels[i].v-octree->black_thresh)*octree->num_grays/(1-octree->black_thresh);
+            g = octree->total_length-octree->num_grays+Vi;
+        }
+        // if current pixel is not gray or black, set g to the proper color grouping.
+        else {
+            Vi=(int)((hsv->pixels[i].v-octree->black_thresh)/octree->Lv);
+            Si=(int)((hsv->pixels[i].s-octree->gray_thresh)/octree->Ls);
+            Hi=(int)(hsv->pixels[i].h/octree->Lh);
+            g = (Hi*octree->num_s+Si)*octree->num_v + Vi;
+        }
+
+        // If the current linked list is NULL, then create one for its space.
+        if (!list_curs[g]) {
+            list_curs[g] = get_hsv_linked_list_node(HSV_Linked_List_Size);
+        }
+        // If the current linked list is filled, allocate a new list and move cur to it.
+        else if (list_curs[g]->i == list_curs[g]->num_pixels) {
+            list_curs[g]->next = get_hsv_linked_list_node(HSV_Linked_List_Size);
+            list_curs[g] = list_curs[g]->next;
+        }
+        // The first unfilled pixel in the g-th list_cur gets the current hsv pixel
+        // The i inside of list_curs[g] is NOT the same i as the for loop uses!!
+        list_curs[g]->pixels[list_curs[g]->i++] = hsv->pixels[i];
+        octree->groups[g].quantity++;
+    }
+}
+
+
+/******************************************************************************
+ * compare_quantity is used to compare the quantities of two octree groups.
+******************************************************************************/
+int compare_quantities(const int* x, const int* y, const Octree_Group* groups) {
+    return groups[*y].quantity - groups[*x].quantity; // For descending order
+}
+
+
+/******************************************************************************
+ * find_valid_parents calculates the quantities of pixels in each octree group
+ *   and assigns valid_parent=true to all octree groups that are required to 
+ *   reach the hyperparameter threshold.
+ *  -Function also adds group id to octree->valid_parents array.
+ *  -total_pixels is the total number of pixels in the image.
+ *  -coverage_threshold is the hyperparameter for the threshold for how many of
+ *   the pixels should be a part of the main colors in the color palette.
+ *   should be a number in the range [0, 1]
+******************************************************************************/
+void find_valid_octree_parents(Octree* octree, int total_pixels, double coverage_threshold) {
+    // sort an array of ids in order from least to greatest
+    int* sorted_ids = malloc(octree->total_length * sizeof(int));
+    for (int i=0; i<octree->total_length; i++) {
+        sorted_ids[i] = i;
+    }
+    qsort_r(sorted_ids, octree->total_length, sizeof(int), compare_quantities, &octree->groups);
+
+    // Fill out values of valid_parents array until coverage_threshold is hit
+    int goal_num_pixels = (int)((double)total_pixels*coverage_threshold);
+    int i;
+    for (i=0; i<octree->total_length; i++) {
+        goal_num_pixels -= octree->groups[sorted_ids[i]].quantity;
+        // if goal_num_pixels is reached, set up valid_parents as 0 to i, and return.
+        if (goal_num_pixels <= 0) {
+            int* valid_parents = (int*)malloc(i*sizeof(int));
+            for(int j=0; j<i; j++) {
+                valid_parents[j] = sorted_ids[j];
+            }
+            octree->valid_parents = valid_parents;
+            octree->len_valid_parents = i;
+            return;
+        }
+    }
+    fprintf(stderr, "ERROR: find_valid_octree_parents should not reach the end of its valid_parents loop");
 }
 
 
@@ -1236,6 +1547,6 @@ int main() {
     // free_image_rgb(fft), fft = NULL;
 
     // free_image_rgb(downsampled);
-    free_image_rgb(image), image=NULL;
+    free_image_rgb(image);
     return 0;
 }

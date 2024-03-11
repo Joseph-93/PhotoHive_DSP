@@ -53,7 +53,6 @@ def txt_to_png(txt_path, png_path):
     img.save(png_path)
 
 
-
 filename = str(input("what is the .txt file you want to convert?\n"))
 base_path = Path('images')
 subdirectories = list_subdirectories(base_path)
