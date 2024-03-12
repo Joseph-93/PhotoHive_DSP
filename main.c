@@ -147,12 +147,19 @@ typedef struct Octree_Group {
  *   pointer to the next instance.
  *  -pixels is the array object
  *  -i is the current iteration of the array which has NOT yet been filled.
- *  -int num_pixels is the array size
  *  -next is a pointer to the next linked list node
+ *  -int num_pixels is the number of pixels the array is to hold
+ *  -int array_size is the total amount of memory in the array.
+ *  -The difference between num_pixels and array_size is that num_pixels is
+ *   used to keep track of pixels in an image, and if the array is not all used
+ *   num_pixels keeps track of the functional end of the array, whereas
+ *   array_size keeps track of the total size of the array, so that all of its
+ *   memory can be properly freed.
 ******************************************************************************/
 typedef struct HSV_Linked_List {
     Pixel_HSV* pixels;
     int num_pixels;
+    int array_size;
     int i;
     HSV_Linked_List* next;
 } HSV_Linked_List;
@@ -1414,6 +1421,7 @@ HSV_Linked_List* get_hsv_linked_list_node(int arr_size) {
         return NULL;
     }
     node->num_pixels = arr_size;
+    node->array_size = arr_size;
     node->pixels = (Pixel_HSV*)calloc(arr_size, sizeof(Pixel_HSV));
     if (!node->pixels) {
         fprintf(stderr, "ERROR: failed to calloc pixels array in get_hsv_linked_list_node()");
@@ -1461,7 +1469,6 @@ void arm_octree(Image_HSV* hsv, Octree* octree, int HSV_Linked_List_Size) {
             g = (Hi*octree->num_s+Si)*octree->num_v + Vi;
         }
 
-        // If the current linked list is NULL, then create one for its space.
         if (!list_curs[g]) {
             list_curs[g] = get_hsv_linked_list_node(HSV_Linked_List_Size);
         }
@@ -1521,6 +1528,144 @@ void find_valid_octree_parents(Octree* octree, int total_pixels, double coverage
         }
     }
     fprintf(stderr, "ERROR: find_valid_octree_parents should not reach the end of its valid_parents loop");
+}
+
+
+/******************************************************************************
+ * 
+******************************************************************************/
+int* get_octree_hsv_coords(Octree* octree, int id) {
+    int coords[3];
+    int coords[0] = id / (octree->num_s * octree->num_v);
+    int coords[1] = (id % (octree->num_s * octree->num_v)) / octree->num_v;
+    int coords[2] = id % octree->num_v;
+    return coords;
+}
+
+
+/******************************************************************************
+ * group_irregular_pixels assigns pixels that are not part of a valid_parent.
+******************************************************************************/
+void group_irregular_pixels(Octree* octree, Image_HSV* hsv) {
+    // initialize cur_groups to the latest HSV_Linked_List in each group
+    HSV_Linked_List** cur_groups = (HSV_Linked_List**)malloc(octree->total_length * sizeof(HSV_Linked_List*));
+    for (int i=0; i<octree->total_length; i++) {
+        cur_groups[i] = octree->groups[i].head;
+        while(cur_groups[i]->next) {
+            cur_groups[i] = cur_groups[i]->next;
+        }
+    }
+    // for node in octree:
+    for (int i=0; i<octree->total_length; i++) {
+        // CHECK FOR NEAREST NODES:
+        // initialize cur_min_dist to high number
+        int cur_min_dist = octree->total_length; // a real min_dist cannot be higher
+        // initialize number_minimums to 0
+        int num_mins=0;
+        // initialize a parent_distances array
+        int* parent_distances = (int*)malloc(octree->len_valid_parents * sizeof(int));
+        // for parent in valid_parents:
+        for (int j=0; j<octree->len_valid_parents; j++) {
+            // calculate manhatten_distance
+            int* group_coords = get_octree_hsv_coords(octree, i);
+            int group_h = group_coords[0], group_s = group_coords[1], group_v = group_coords[2];
+            int* parent_coords = get_octree_hsv_coords(octree, j);
+            int parent_h = parent_coords[0], parent_s = parent_coords[1], parent_v = parent_coords[2];
+            int man_dist = group_h-parent_h + group_s-parent_s + group_v-parent_v;
+            // if manhatten_distance < cur_min_dist:
+            if (man_dist < cur_min_dist) {
+                // update cur_min_dist
+                cur_min_dist = man_dist;
+                // num_minimums = 1
+                num_mins = 1;
+            }
+            // if manhatten_distance == cur_min_dist:
+            else if (man_dist == cur_min_dist) {
+                // num_minimums++
+                num_mins++;
+            }
+            // update parent_distances array
+            parent_distances[j] = man_dist;
+        }
+        // Malloc a closest[] array, num_minimums
+        int num_closest_parents = num_mins;
+        int* closest_parents = (int*)malloc(num_closest_parents*sizeof(int));
+        {
+            int k = 0;
+            // for parent_distance in parent_distances:
+            for (int j=0; j<octree->len_valid_parents; j++) {
+                // if parent_distance == cur_min_dist
+                if (parent_distances[j] == cur_min_dist) {
+                    // append valid_parents[j] to closest_parents
+                    closest_parents[k++] = octree->valid_parents[j];
+                }
+            }
+        }
+
+        HSV_Linked_List* cur_list = octree->groups[i].head;
+        // ASSIGN TO NEAREST
+        // if several equally nearest nodes:
+        if (num_closest_parents > 1) {
+            // USE EUCLIDEAN^2 DISTANCE FOR EACH PIXEL
+            // for pixel in node:
+            while(cur_list) {
+                for(int j=0; j<cur_list->num_pixels; j++) {
+                    // initialize cur_min_dist to something HIGH or something...
+                    double cur_min_dist = (double)octree->total_length;
+                    // initialize cur_min_parent_id to 0
+                    int cur_min_parent_id = 0;
+                    // for parent in valid_parents
+                    for(int k=0; k<num_closest_parents; k++) {
+                        // euc_dist = (parentx - pixelx)^2 + (parenty-pixely)^2
+                        double parent_id = closest_parents[k];
+                        double pixel_id = j;
+                        int* pixel_coords = get_octree_hsv_coords(octree, pixel_id);
+                        int* parent_coords = get_octree_hsv_coords(octree, parent_id);
+                        int h = (double)(pixel_coords[0] - parent_coords[0]);
+                        int s = (double)(pixel_coords[1] - parent_coords[1]);
+                        int v = (double)(pixel_coords[2] - parent_coords[2]);
+                        double euc_dist = h*h + s*s + v*v;
+                        // if euc_dist < cur_min_dist
+                        if (euc_dist < cur_min_dist) {
+                            // update cur_min_dist
+                            cur_min_dist = euc_dist;
+                            // update cur_min_parent_id
+                            cur_min_parent_id = parent_id;
+                        }
+                    }
+                    // assign pixel to the octree->groups[cur_min_parent_id]
+                    HSV_Linked_List* cur_group = cur_groups[cur_min_parent_id];
+                    // If the current linked list is filled, allocate a new list and move cur to it.
+                    if (cur_group->i == cur_group->num_pixels) {
+                        cur_group->next = get_hsv_linked_list_node(cur_group->array_size);
+                        cur_group = cur_group->next;
+                    }
+                    cur_group->pixels[cur_group->i++] = cur_list->pixels[j];
+                    // groups[cur_min_parent_id].quantity++
+                    octree->groups[cur_min_parent_id].quantity++;
+                }
+                cur_list = cur_list->next;
+            }
+        }
+
+        // else
+        else {
+            // every pixel goes to the nearest node
+            HSV_Linked_List* cur_group = cur_groups[closest_parents[0]];
+            cur_group->num_pixels = cur_group->i;
+            if (cur_list) cur_group->next = cur_list;
+            // valid_parent.quantity += node.quantity
+            octree->groups[closest_parents[0]].quantity += octree->groups[i].quantity;
+            // node.quantity = 0
+            octree->groups[i].quantity = 0;
+            // get cur_group to the very back of cur_group+cur_list
+            while(cur_group->next) {
+                cur_group = cur_group->next;
+            }
+            // empty octree->groups[i] because it's been transferred to cur_group
+            octree->groups[i].head = NULL;
+        }
+    }
 }
 
 
