@@ -1,0 +1,112 @@
+FULL REPORT:
+Variance-based Sharpness: 0.005743
+Average Saturation: 0.288762
+Brightness of RGB: (0.534668,0.524161,0.441885)
+Contrast of RGB; (0.206252,0.167848,0.184114)
+
+Color Palette Contents:
+1	HSV: ( 34, 17, 67), Portion of image accounted for: 0.386547
+2	HSV: ( 48, 31, 68), Portion of image accounted for: 0.053156
+3	HSV: ( 33, 17, 57), Portion of image accounted for: 0.044193
+4	HSV: ( 49, 40, 55), Portion of image accounted for: 0.040338
+5	HSV: ( 46, 40, 67), Portion of image accounted for: 0.037033
+6	HSV: (137,  6, 40), Portion of image accounted for: 0.033394
+7	HSV: ( 48, 31, 55), Portion of image accounted for: 0.028925
+8	HSV: ( 70, 42, 41), Portion of image accounted for: 0.032049
+9	HSV: ( 69, 41, 54), Portion of image accounted for: 0.027673
+10	HSV: ( 73, 42, 30), Portion of image accounted for: 0.027574
+11	HSV: ( 51, 42, 42), Portion of image accounted for: 0.026180
+12	HSV: ( 79, 30, 29), Portion of image accounted for: 0.021768
+13	HSV: ( 45, 31, 80), Portion of image accounted for: 0.023092
+14	HSV: (200, 90, 94), Portion of image accounted for: 0.024163
+15	HSV: ( 76, 29, 41), Portion of image accounted for: 0.020895
+16	HSV: (141, 36, 12), Portion of image accounted for: 0.021499
+17	HSV: ( 80, 29, 17), Portion of image accounted for: 0.012648
+18	HSV: ( 71, 29, 55), Portion of image accounted for: 0.013847
+19	HSV: ( 50, 31, 43), Portion of image accounted for: 0.009629
+20	HSV: ( 47, 45, 29), Portion of image accounted for: 0.015414
+21	HSV: ( 95, 27, 68), Portion of image accounted for: 0.013174
+22	HSV: (204, 88, 75), Portion of image accounted for: 0.016814
+23	HSV: ( 48, 14, 80), Portion of image accounted for: 0.008734
+24	HSV: ( 78, 40, 19), Portion of image accounted for: 0.005850
+25	HSV: (114, 41, 67), Portion of image accounted for: 0.008625
+26	HSV: ( 44, 27, 26), Portion of image accounted for: 0.011292
+27	HSV: ( 83, 18, 15), Portion of image accounted for: 0.004659
+28	HSV: (214, 26, 31), Portion of image accounted for: 0.012962
+
+Blur Profile:
+angle:   0, radius: 0.000		 RGB Bins: (0.378710,0.375560,0.376909)
+angle:   0, radius: 0.250		 RGB Bins: (0.236348,0.233208,0.237935)
+angle:   0, radius: 0.500		 RGB Bins: (0.204649,0.200381,0.205809)
+angle:   0, radius: 0.750		 RGB Bins: (0.000000,0.000000,0.000000)
+angle:  10, radius: 0.000		 RGB Bins: (0.364754,0.358697,0.360722)
+angle:  10, radius: 0.250		 RGB Bins: (0.223524,0.221135,0.225416)
+angle:  10, radius: 0.500		 RGB Bins: (0.184139,0.180567,0.186893)
+angle:  10, radius: 0.750		 RGB Bins: (0.000000,0.000000,0.000000)
+angle:  20, radius: 0.000		 RGB Bins: (0.314760,0.315424,0.312124)
+angle:  20, radius: 0.250		 RGB Bins: (0.204781,0.202953,0.206339)
+angle:  20, radius: 0.500		 RGB Bins: (0.164228,0.159778,0.166569)
+angle:  20, radius: 0.750		 RGB Bins: (0.000000,0.000000,0.000000)
+angle:  30, radius: 0.000		 RGB Bins: (0.294441,0.295065,0.292960)
+angle:  30, radius: 0.250		 RGB Bins: (0.199739,0.198138,0.200749)
+angle:  30, radius: 0.500		 RGB Bins: (0.152048,0.147797,0.154363)
+angle:  30, radius: 0.750		 RGB Bins: (0.127960,0.128571,0.129357)
+angle:  40, radius: 0.000		 RGB Bins: (0.303776,0.304892,0.301574)
+angle:  40, radius: 0.250		 RGB Bins: (0.203520,0.202439,0.204329)
+angle:  40, radius: 0.500		 RGB Bins: (0.146294,0.142798,0.148383)
+angle:  40, radius: 0.750		 RGB Bins: (0.126206,0.122828,0.128014)
+angle:  50, radius: 0.000		 RGB Bins: (0.310326,0.311928,0.308983)
+angle:  50, radius: 0.250		 RGB Bins: (0.209818,0.209261,0.210639)
+angle:  50, radius: 0.500		 RGB Bins: (0.148186,0.145555,0.149537)
+angle:  50, radius: 0.750		 RGB Bins: (0.130073,0.128066,0.131066)
+angle:  60, radius: 0.000		 RGB Bins: (0.318294,0.321373,0.319234)
+angle:  60, radius: 0.250		 RGB Bins: (0.220085,0.220391,0.221204)
+angle:  60, radius: 0.500		 RGB Bins: (0.160592,0.158792,0.161355)
+angle:  60, radius: 0.750		 RGB Bins: (0.147992,0.146670,0.148443)
+angle:  70, radius: 0.000		 RGB Bins: (0.326372,0.328146,0.327768)
+angle:  70, radius: 0.250		 RGB Bins: (0.227633,0.227287,0.228065)
+angle:  70, radius: 0.500		 RGB Bins: (0.166165,0.163491,0.166829)
+angle:  70, radius: 0.750		 RGB Bins: (0.152554,0.149469,0.153511)
+angle:  80, radius: 0.000		 RGB Bins: (0.339018,0.339355,0.341663)
+angle:  80, radius: 0.250		 RGB Bins: (0.243370,0.239271,0.243338)
+angle:  80, radius: 0.500		 RGB Bins: (0.190620,0.181497,0.189340)
+angle:  80, radius: 0.750		 RGB Bins: (0.179425,0.168607,0.179238)
+angle:  90, radius: 0.000		 RGB Bins: (0.335757,0.338226,0.337332)
+angle:  90, radius: 0.250		 RGB Bins: (0.235069,0.234629,0.235261)
+angle:  90, radius: 0.500		 RGB Bins: (0.166760,0.164353,0.167644)
+angle:  90, radius: 0.750		 RGB Bins: (0.154078,0.150864,0.155415)
+angle: 100, radius: 0.000		 RGB Bins: (0.316120,0.319871,0.319577)
+angle: 100, radius: 0.250		 RGB Bins: (0.215981,0.215196,0.216448)
+angle: 100, radius: 0.500		 RGB Bins: (0.159115,0.157307,0.160113)
+angle: 100, radius: 0.750		 RGB Bins: (0.147517,0.146333,0.148247)
+angle: 110, radius: 0.000		 RGB Bins: (0.308505,0.313808,0.313302)
+angle: 110, radius: 0.250		 RGB Bins: (0.206888,0.205839,0.207270)
+angle: 110, radius: 0.500		 RGB Bins: (0.146968,0.144128,0.148393)
+angle: 110, radius: 0.750		 RGB Bins: (0.129761,0.127837,0.130715)
+angle: 120, radius: 0.000		 RGB Bins: (0.302515,0.307972,0.305298)
+angle: 120, radius: 0.250		 RGB Bins: (0.200585,0.199173,0.201178)
+angle: 120, radius: 0.500		 RGB Bins: (0.145498,0.141927,0.147573)
+angle: 120, radius: 0.750		 RGB Bins: (0.126012,0.122300,0.127840)
+angle: 130, radius: 0.000		 RGB Bins: (0.295732,0.299950,0.297306)
+angle: 130, radius: 0.250		 RGB Bins: (0.198884,0.197391,0.200305)
+angle: 130, radius: 0.500		 RGB Bins: (0.151848,0.147635,0.154127)
+angle: 130, radius: 0.750		 RGB Bins: (0.136795,0.131830,0.133116)
+angle: 140, radius: 0.000		 RGB Bins: (0.291641,0.295424,0.294157)
+angle: 140, radius: 0.250		 RGB Bins: (0.202127,0.200688,0.204065)
+angle: 140, radius: 0.500		 RGB Bins: (0.163711,0.159435,0.166152)
+angle: 140, radius: 0.750		 RGB Bins: (0.000000,0.000000,0.000000)
+angle: 150, radius: 0.000		 RGB Bins: (0.300376,0.303754,0.303978)
+angle: 150, radius: 0.250		 RGB Bins: (0.207950,0.205806,0.210348)
+angle: 150, radius: 0.500		 RGB Bins: (0.183376,0.179744,0.185869)
+angle: 150, radius: 0.750		 RGB Bins: (0.000000,0.000000,0.000000)
+angle: 160, radius: 0.000		 RGB Bins: (0.332300,0.336933,0.338436)
+angle: 160, radius: 0.250		 RGB Bins: (0.224625,0.219936,0.225771)
+angle: 160, radius: 0.500		 RGB Bins: (0.202857,0.198484,0.204118)
+angle: 160, radius: 0.750		 RGB Bins: (0.000000,0.000000,0.000000)
+angle: 170, radius: 0.000		 RGB Bins: (0.491744,0.472225,0.491466)
+angle: 170, radius: 0.250		 RGB Bins: (0.413079,0.394567,0.413724)
+angle: 170, radius: 0.500		 RGB Bins: (0.403238,0.384353,0.403693)
+angle: 170, radius: 0.750		 RGB Bins: (0.000000,0.000000,0.000000)
+
+
+END OF REPORT.
