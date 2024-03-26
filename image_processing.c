@@ -16,7 +16,7 @@
  *  -Function returns NULL if any allocations fail
  *  -Function returns NULL if height or width are equal to 0.
 ******************************************************************************/
-Image_RGB* create_rgb_image(unsigned int width, unsigned int height) {
+Image_RGB* create_rgb_image(int width, int height) {
     if (!height) {  // If height is 0, throw error and return NULL
         fprintf(stderr, "ERROR: create_rgb_image received height==0.\n");
         return NULL;
@@ -50,7 +50,7 @@ Image_RGB* create_rgb_image(unsigned int width, unsigned int height) {
  *  -Function returns NULL if any allocations fail
  *  -Function returns NULL if height or width are equal to 0.
 ******************************************************************************/
-Image_HSV* create_hsv_image(unsigned int width, unsigned int height) {
+Image_HSV* create_hsv_image(int width, int height) {
     if (!height) {  // If height is 0, throw error and return NULL
         fprintf(stderr, "ERROR: create_hsv_image received height==0.\n");
         return NULL;
@@ -82,7 +82,7 @@ Image_HSV* create_hsv_image(unsigned int width, unsigned int height) {
  *  -Function returns NULL if any allocations fail
  *  -Function returns NULL if height or width are equal to 0.
 ******************************************************************************/
-Image_PGM* create_pgm_image(unsigned int width, unsigned int height) {
+Image_PGM* create_pgm_image(int width, int height) {
     if (!height) {  // If height is 0, throw error and return NULL
         fprintf(stderr, "ERROR: create_pgm_image received height==0.\n");
         return NULL;
@@ -219,8 +219,8 @@ Image_RGB* crop_image(Image_RGB* image, int right, int left, int bottom, int top
     }
 
     // Calculate cropped image width and height, then create the image
-    unsigned int width = right - left;
-    unsigned int height = bottom - top;
+    int width = right - left;
+    int height = bottom - top;
     Image_RGB* cropped_image = create_rgb_image(width, height);
 
     // Copy the portion of the original to be kept, onto the cropped image
@@ -296,7 +296,7 @@ Image_RGB* read_image_from_files() {
  *  -N is the interval at which pixels are sampled, in 2D. One pixel after
  *   downsampling attempts to describe an NxN square of pixels.
 ******************************************************************************/
-Image_RGB* downsample_rgb(Image_RGB* image, unsigned short N) {
+Image_RGB* downsample_rgb(Image_RGB* image, short N) {
     // Create image for decimation
     int height = image->height; int width = image->width;
     int new_height = image->height/N; int new_width = image->width/N;
@@ -330,12 +330,12 @@ Image_HSV* rgb2hsv(Image_RGB* rgb) {
         return NULL;
     }
     // Set height and width to be used
-    unsigned short height = rgb->height;
-    unsigned short width = rgb->width;
+    short height = rgb->height;
+    short width = rgb->width;
     // Initialize 3-channel image as hsv, with all 0s
     Image_HSV* hsv = (Image_HSV*)create_hsv_image(width, height);
     // Iterate through every pixel
-    unsigned int i_tot = height*width;
+    int i_tot = height*width;
     for (int i=0; i<i_tot; i++) {
         // Set necessary values
         Pixel_HSV* cur = &hsv->pixels[i];
@@ -380,15 +380,15 @@ Image_RGB* hsv2rgb(Image_HSV* hsv) {
         fprintf(stderr, "ERROR: hsv2rgb() recieved a null pointer to rgb.");
         return NULL;
     }
-    unsigned short height = hsv->height;
-    unsigned short width = hsv->width;
+    short height = hsv->height;
+    short width = hsv->width;
 
     // Initialize 3-channel image as rgb, assuming create_rgb_image is similar to create_hsv_image
     Image_RGB* rgb = (Image_RGB*)create_rgb_image(width, height);
     if (!rgb) return NULL; // Check if memory allocation failed
 
-    unsigned int i_tot = height * width;
-    for (unsigned int i = 0; i < i_tot; i++) {
+    int i_tot = height * width;
+    for (int i = 0; i < i_tot; i++) {
         Pixel_HSV cur = hsv->pixels[i];
         Pixel h = cur.h;
         Pixel s = cur.s;

@@ -29,7 +29,7 @@ typedef struct Pixel_HSV {
  *   increased efficiency in reference. Proper indexing: img.color[y*width + x]
 ******************************************************************************/
 typedef struct Image_RGB {
-    unsigned int height, width;
+    int height, width;
     Pixel* r;
     Pixel* g;
     Pixel* b;
@@ -48,7 +48,7 @@ typedef struct Image_RGB {
  *   increased efficiency in reference. Proper indexing: img.color[y*width + x]
 ******************************************************************************/
 typedef struct Image_HSV {
-    unsigned int height, width;
+    int height, width;
     Pixel_HSV* pixels;
 } Image_HSV;
 
@@ -61,7 +61,7 @@ typedef struct Image_HSV {
  *   increased efficiency in reference Proper indexing: img.data[y*width + x].
 ******************************************************************************/
 typedef struct Image_PGM {
-    unsigned int height, width;
+    int height, width;
     Pixel* data;
 } Image_PGM;
 
@@ -80,11 +80,11 @@ typedef struct RGB_Statistics {
 } RGB_Statistics;
 
 
-Image_RGB* create_rgb_image(unsigned int width, unsigned int height);
+Image_RGB* create_rgb_image(int width, int height);
 
-Image_HSV* create_hsv_image(unsigned int width, unsigned int height);
+Image_HSV* create_hsv_image(int width, int height);
 
-Image_PGM* create_pgm_image(unsigned int width, unsigned int height);
+Image_PGM* create_pgm_image(int width, int height);
 
 Image_RGB* read_image(const char* filepath);
 
@@ -102,7 +102,7 @@ void free_image_hsv(Image_HSV* hsv);
 
 Image_RGB* read_image_from_files();
 
-Image_RGB* downsample_rgb(Image_RGB* image, unsigned short N);
+Image_RGB* downsample_rgb(Image_RGB* image, short N);
 
 void validate_coordinates(Image_RGB* array, int x, int y, int* errors);
 

@@ -126,8 +126,14 @@ Pixel get_variance_sharpness(Pixel* input, int height, int width) {
 
     // get variance
     int length = height*width;
+    START_TIMING(laplacian_avg_time);
     Pixel avg = get_average(filtered, length);
+    END_TIMING(laplacian_avg_time, "getting average of laplacian");
+
+    START_TIMING(variance_time);
     Pixel variance = get_variance(filtered, length, avg);
+    END_TIMING(variance_time, "getting the variance of laplacian");
+
 
     // Clean up memory
     free(filtered);

@@ -14,57 +14,91 @@
 #include "debug.h"
 #include "filtering.h"
 #include "types.h"
+#include "utilities.h"
 
-#define LINKED_LIST_SIZE 1000
+#define LINKED_LIST_SIZE 5000
 #define COVERAGE_THRESHOLD 0.90
 #define DOWNSAMPLE_RATE 5
-#define H_PARTS 6
-#define S_PARTS 7
-#define V_PARTS 7
-#define BLACK_THRESH 0.1
+#define H_PARTS 10
+#define S_PARTS 5
+#define V_PARTS 5
+#define BLACK_THRESH 0.15
 #define GRAY_THRESH 0.1
 #define NUM_RADIUS_BINS 4
 #define NUM_ANGLE_BINS 18
 
 
-Full_Report_Data* get_full_report_data(Image_RGB* image) {
+Full_Report_Data* get_full_report_data(Image_RGB* image,
+                                       int h_partitions, int s_partitions, int v_partitions,
+                                       double black_thresh, double gray_thresh,
+                                       double coverage_thresh, int linked_list_size,
+                                       int downsample_rate, int radius_partitions, int angle_partitions) {
     setbuf(stdout, NULL);
+
+    threading_setup();
+    printf("\n There are %d cores available to the C program.\n\n", num_cores);
+    // printf("H partitions: %d, S partitions: %d, V partitions: %d, "
+    //     "Black threshold: %.2f, Gray threshold: %.2f, "
+    //     "Coverage threshold: %.2f, Linked list size: %d, "
+    //     "Downsample rate: %d, Radius partitions: %d, Angle partitions: %d\n",
+    //     h_partitions, s_partitions, v_partitions,
+    //     black_thresh, gray_thresh,
+    //     coverage_thresh, linked_list_size,
+    //     downsample_rate, radius_partitions, angle_partitions);
+
+    // Downsample RGB image
+    START_TIMING(downsample_time);
+    Image_RGB* downsampled;
+    if(downsample_rate > 1) downsampled = downsample_rgb(image, downsample_rate);
+    else downsampled = image;
+    END_TIMING(downsample_time, "downsample rgb");
+
     // Convert to HSV and PGM
-    Image_HSV* hsv = rgb2hsv(image);
-    printf("Got past hsv conversion.\n");
+    START_TIMING(hsv_time);
+    Image_HSV* hsv = rgb2hsv(downsampled);
+    END_TIMING(hsv_time, "rgb2hsv");
+
+    START_TIMING(pgm_time);
     Image_PGM* pgm = rgb2pgm(image);
-    printf("got past the pgm conversion.\n");
+    END_TIMING(pgm_time, "rgb2pgm");
 
     // Get brightness and contrast measurements
+    START_TIMING(rgb_stats_time);
     RGB_Statistics* rgb_stats = get_rgb_statistics(image);
-    printf("got past rgb_statistics.\n");
+    END_TIMING(rgb_stats_time, "rgb statistics");
 
     // Get average saturation from hsv
+    START_TIMING(s_bar_time);
     Pixel S_bar = get_hsv_average(hsv);
-    printf("got past S_bar\n");
+    END_TIMING(s_bar_time, "hsv average");
 
     // Get color palette from hsv
-    Color_Palette* cp = get_color_palette(hsv, LINKED_LIST_SIZE, COVERAGE_THRESHOLD,
-                                          H_PARTS, S_PARTS, V_PARTS,
-                                          BLACK_THRESH, GRAY_THRESH);
-    printf("got past color_palette.\n");    
+    START_TIMING(color_palette_time);
+    Color_Palette* cp = get_color_palette(hsv, linked_list_size, coverage_thresh,
+                                          h_partitions, s_partitions, v_partitions,
+                                          black_thresh, gray_thresh);
+    END_TIMING(color_palette_time, "color palette");
 
     // get the variance sharpness measurement
+    START_TIMING(sharpness_time);
     Pixel variance_sharpness = get_variance_sharpness(pgm->data, pgm->height, pgm->width);
-    printf("got past variance_sharpness.\n");
+    END_TIMING(sharpness_time, "sharpness");
 
     // Get blur profile
-    Blur_Profile_RGB* bp = get_blur_profile(image, NUM_RADIUS_BINS, NUM_ANGLE_BINS);
-    printf("got past Blur Profile.\n");
+    START_TIMING(blur_profile_time);
+    Blur_Profile_RGB* bp = get_blur_profile(image, radius_partitions, angle_partitions);
+    END_TIMING(blur_profile_time, "blur profile");
 
+    START_TIMING(compile_report_time);
     Full_Report_Data* full_report = compile_full_report(rgb_stats, cp, bp, S_bar, variance_sharpness);
-    printf("Got past full_data_report*.\n");
+    END_TIMING(compile_report_time, "compile full report");
 
     // Free data
+    START_TIMING(free_image_time);
     free_image_pgm(pgm); pgm = NULL;
-    printf("got past freeing the pgm.\n");
     free_image_hsv(hsv); hsv = NULL;
-    printf("got past freeing hsv.\n");
+    if (downsample_rate > 1) free_image_rgb(downsampled); downsampled = NULL;
+    END_TIMING(free_image_time, "free images");
     return full_report;
 }
 
@@ -87,7 +121,11 @@ int main() {
     Image_RGB* image = read_image_from_files();
 
     // Arm full report
-    Full_Report_Data* full_report_data = get_full_report_data(image);
+    Full_Report_Data* full_report_data = get_full_report_data(image,
+                                         H_PARTS, S_PARTS, V_PARTS, 
+                                         BLACK_THRESH, GRAY_THRESH, COVERAGE_THRESHOLD, 
+                                         LINKED_LIST_SIZE, DOWNSAMPLE_RATE, 
+                                         NUM_RADIUS_BINS, NUM_ANGLE_BINS);
 
     print_full_report(full_report_data);
 

@@ -35,7 +35,6 @@ Blur_Profile_RGB* calculate_blur_profile(
                     const Image_RGB* fft, 
                     int num_radius_bins, 
                     int num_angle_bins) {
-    
     // Issue necessary warnings
     if (conversion->height != fft->height || conversion->width != fft->width) {
         printf("ERROR: conversion and fft dimensions do not match.\n");
@@ -56,7 +55,9 @@ Blur_Profile_RGB* calculate_blur_profile(
     profile->angle_bin_size = (double)(180 / num_angle_bins);
     double max_radius = sqrt(fft->width*fft->width + fft->height*fft->height/4);
     profile->radius_bin_size = (double)(max_radius / num_radius_bins);
-    double radius_bin_size_sq = profile->radius_bin_size*profile->radius_bin_size;
+    double radius_bin_size_sq = (double)(profile->radius_bin_size*profile->radius_bin_size);
+
+    radius_bin_size_sq = (double)((fft->width*fft->width + fft->height*fft->height/4) / (num_radius_bins*num_radius_bins));
 
     // Allocate space for empty bins
     profile->r_bins = (Bin**)malloc(num_angle_bins * sizeof(Bin*));
@@ -87,6 +88,7 @@ Blur_Profile_RGB* calculate_blur_profile(
         bin_quant[i] = (int*)calloc(num_radius_bins, sizeof(int));
     }
 
+    START_TIMING(accumulate_bins_time);
     for (int i=0; i<i_tot; i++) {
         // Store r_sq and phi for readability
         int r_sq = conversion->data[i].r_sq;
@@ -96,14 +98,16 @@ Blur_Profile_RGB* calculate_blur_profile(
         // +num_angle_bins/2 to normalize the phi range of [-90deg, 90deg) to [0, num_angle_bins]
         int phi_bin = (int)((phi+PI*0.5f)/PI * (double)(profile->num_angle_bins-1));
         // r_bin is sqrt(r^2/r_bin_size^2), but a newton int approximation
-        int r_bin = newton_int_sqrt((double)r_sq/radius_bin_size_sq);
+        int r_bin = newton_int_sqrt(((double)r_sq)/radius_bin_size_sq);
         bin_quant[phi_bin][r_bin]++;    // Increment the counter for how many pixels have been assigned to this bin
         profile->r_bins[phi_bin][r_bin] += r[i];    // Profile not locally stored like fft members because
         profile->g_bins[phi_bin][r_bin] += g[i];    // due to small size, it will likely all be stored in
         profile->b_bins[phi_bin][r_bin] += b[i];    // CPU cache anyway. Access should be inexpensive
     }
+    END_TIMING(accumulate_bins_time, "accumulating pixels to blur_profile bins");
 
     // Divide by the number of bins
+    START_TIMING(average_bin_time);
     Bin bin_quantity;
     for (int phi_bin=0; phi_bin<num_angle_bins; phi_bin++) {
         for (int r_bin=0; r_bin<num_radius_bins; r_bin++) {
@@ -120,6 +124,7 @@ Blur_Profile_RGB* calculate_blur_profile(
             }
         }
     }
+    END_TIMING(average_bin_time, "calculating average of blur_profile bins");
     return profile;
 }
 
@@ -136,10 +141,10 @@ Blur_Profile_RGB* calculate_blur_profile(
  *   come to approximate the fft itself.
 ******************************************************************************/
 Image_RGB* get_blur_profile_visual(Blur_Profile_RGB* blur_profile, 
-                                   Cartesian_To_Polar* conversion, 
                                    int height, int width) {
     // Allocate memory for an RGB image, with height and width
     Image_RGB* output_image = create_rgb_image(width, height);
+
     if (!output_image) {
         fprintf(stderr, "Error creating output image.\n");
         return NULL;
@@ -213,7 +218,7 @@ void blur_profile_tests(Image_RGB* fft) {
 
     #ifdef DEBUG
     // Create image representation of bin-approximated FFT
-    Image_RGB* blur_profile_visualization = get_blur_profile_visual(blur_profile, conversion, fft->height, fft->width);
+    Image_RGB* blur_profile_visualization = get_blur_profile_visual(blur_profile, fft->height, fft->width);
 
     // Save image representation of bin-approximated FFT
     const char* path = "images/visualizations/";
@@ -240,19 +245,25 @@ void blur_profile_tests(Image_RGB* fft) {
 ******************************************************************************/
 Blur_Profile_RGB* get_blur_profile(Image_RGB* image, int num_radius_bins, int num_angle_bins) {
     // Calculate FFT
+    START_TIMING(compute_mag_fft_time);
     Image_RGB* fft = compute_magnitude_fft(image);
+    END_TIMING(compute_mag_fft_time, "computing the magnitude fft");
 
     // Create cartesian to polar conversion
-    Cartesian_To_Polar* conversion;   
+    START_TIMING(c2p_time);
+    Cartesian_To_Polar* conversion;
     conversion = cartesian_to_polar_conversion(fft->width, fft->height);
+    END_TIMING(c2p_time, "cartesian to polar conversion");
 
     // Calculate the blur profile
-    Blur_Profile_RGB* blur_profile; 
+    START_TIMING(calc_blur_profile_time);
+    Blur_Profile_RGB* blur_profile;
     blur_profile = calculate_blur_profile(conversion, fft, num_radius_bins, num_angle_bins);
+    END_TIMING(calc_blur_profile_time, "calculate_blur_profile");
     
     #ifdef DEBUG
     // Create image representation of bin-approximated FFT
-    Image_RGB* blur_profile_visualization = get_blur_profile_visual(blur_profile, conversion, fft->height, fft->width);
+    Image_RGB* blur_profile_visualization = get_blur_profile_visual(blur_profile, fft->height, fft->width);
 
     // Save image representation of bin-approximated FFT
     const char* path = "images/visualizations/";
@@ -264,8 +275,10 @@ Blur_Profile_RGB* get_blur_profile(Image_RGB* image, int num_radius_bins, int nu
     #endif
 
     // Clean up
+    START_TIMING(free_fft_time);
     free_image_rgb(fft);
     free_cartesian_to_polar(conversion);
+    END_TIMING(free_fft_time, "freeing FFT structures");
     return blur_profile;
 }
 
@@ -291,8 +304,11 @@ Cartesian_To_Polar* cartesian_to_polar_conversion(unsigned int width, unsigned i
         return NULL;
     }
     int half_height = height/2;
+    int height_bound;
+    if (height %2 == 1) height_bound = half_height+1;
+    else height_bound = half_height;
     int y_times_width = 0;
-    for (int y=0; y<height/2; y++) {    // height/2 for symmetry across x axis
+    for (int y=0; y<height_bound; y++) {    // height/2 for symmetry across x axis
         for (int x=0; x<width; x++) {
             int r_sq = x*x+y*y;
             double phi = atan2(y, x);

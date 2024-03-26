@@ -7,9 +7,11 @@
 #include "utilities.h"
 #include "debug.h"
 
+#define DEBUG
+
 #define HUE_NORMALIZER (1.0)/(360.0)
-#define QUANTITY_WEIGHT 0.8
-#define SATURATION_VALUE_WEIGHT 0.2
+#define QUANTITY_WEIGHT 0.9
+#define SATURATION_VALUE_WEIGHT 0.1
 #define SATURATION_VALUE_THRESHOLD 0.6
 
 /******************************************************************************
@@ -191,6 +193,7 @@ void find_valid_octree_parents(Octree* octree, int total_pixels, double coverage
             return;
         }
     }
+
     fprintf(stderr, "ERROR: find_valid_octree_parents should not reach the end of its valid_parents loop");
 }
 
@@ -220,7 +223,7 @@ int* get_octree_hsv_coords(Octree* octree, int id) {
 
 
 /******************************************************************************
- * calculate_manhatten_distance calculates the distance from a group node to a
+ * get_node_distance_heuristic calculates the distance from a group node to a
  *   parent node, with the caveats of the octree grouping system, gray nodes
  *   and the black node.
  *  -Function returns integer distance, similar to the square of the euclidean
@@ -468,26 +471,35 @@ Color_Palette* calculate_avg_hsv(Octree* octree, Image_HSV* hsv) {
     // Get 1/(number of pixels) for fast multiplication
     Pixel inverse_of_quantity = 1.0/(hsv->height * hsv->width);
 
+    // Iterate through valid parents of octree
     for (int i=0; i<octree->len_valid_parents; i++) {
         int id = octree->valid_parents[i];
         HSV_Linked_List* list = octree->groups[id].head;
         Pixel h_total = 0, s_total=0, v_total=0;
         int total_pixels = 0;
+        // Iterate through all linked lists
         while(list) {
+            // accumulate list's number of pixels to the total pixels
             total_pixels += list->num_pixels;
+            // Iterate through pixels of linked lists
             for(int j=0; j<list->num_pixels; j++) {
+                // Get totals of the h,s,v values.
+                // NOTE: Use large data types, else precision will be lost here.
                 h_total += list->pixels[j].h;
                 s_total += list->pixels[j].s;
                 v_total += list->pixels[j].v;
             }
             list = list->next;
         }
+        // divide h,s,v totals by the number of pixels (calculate averages)
+        // Store values in color palette structure
         double list_inverse_of_quantity = 1.0/(double)total_pixels;
         cp->averages[i].h = h_total * list_inverse_of_quantity;
         cp->averages[i].s = s_total * list_inverse_of_quantity;
         cp->averages[i].v = v_total * list_inverse_of_quantity;
         cp->percentages[i] = (double)total_pixels * inverse_of_quantity;
     }
+    // return the color palette
     return cp;
 }
 
@@ -505,15 +517,22 @@ Color_Palette* calculate_avg_hsv(Octree* octree, Image_HSV* hsv) {
 float saliency(const Octree_Group* group) {
     float saliency;
     float s_v = group->s * group->v;
-    float weighted_quantity = ((float)group->quantity)*QUANTITY_WEIGHT;
-    if (s_v > SATURATION_VALUE_THRESHOLD) {
-        float weighted_s_v = (s_v)*SATURATION_VALUE_WEIGHT*10;
-        saliency = weighted_quantity + weighted_s_v;
-    }
-    else {
-        saliency = weighted_quantity;
-    }
-    return saliency*100; // simply multiply by 100 to reduce issues in truncation
+    // Equation1 implemented
+    // float weighted_quantity = ((float)group->quantity)*QUANTITY_WEIGHT;
+    // if (s_v > SATURATION_VALUE_THRESHOLD && weighted_quantity > 0.0) {
+    //     // The constant is guessing how high the highest quantity is as a percentage,
+    //     // To make sure that the weighted_s_v works with the quantity nicely.
+    //     float weighted_s_v = (s_v)*SATURATION_VALUE_WEIGHT*100;
+    //     saliency = weighted_quantity + weighted_s_v;
+    // }
+    // else {
+    //     saliency = weighted_quantity;
+    // }
+
+    // Equation2 implemented
+    saliency = (float)group->quantity*(QUANTITY_WEIGHT+SATURATION_VALUE_WEIGHT*s_v);
+
+    return saliency*1000; // simply multiply by 1000 to reduce issues in truncation
 }
 
 
@@ -576,7 +595,7 @@ Color_Palette* get_color_palette(Image_HSV* hsv,
                                  const int h_parts, const int s_parts, const int v_parts,
                                  const double black_thresh, const double gray_thresh) {
 
-    // Initialize Octree for testing
+    // Initialize Octree
     Octree* octree = initialize_octree(h_parts, s_parts, v_parts, black_thresh, gray_thresh);
 
     // Put hsv pixels into octree structure
@@ -590,11 +609,6 @@ Color_Palette* get_color_palette(Image_HSV* hsv,
 
     // Create a color palette
     Color_Palette* cp = calculate_avg_hsv(octree, hsv);
-
-    // Write reports, save color palette
-    #ifdef DEBUG
-    generate_color_palette_image(octree, hsv);
-    #endif
 
     // Clean up
     free_octree(octree);

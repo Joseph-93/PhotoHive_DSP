@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <sys/time.h>
 
 /******************************************************************************
  * rgb_fft calculates the FFT of an RGB image given.
@@ -200,11 +201,13 @@ Image_RGB* fft_shift(Image_RGB* fft) {
  *   maximums and scaled values will be shown.
 ******************************************************************************/
 void rgb_normalize_fft(Image_RGB* fft, Lookup_1D* fft_normalizer_lookup) {
-    double max = fft->r[0];     // Set Maximum as any valid value
+    int guess_max_location = fft->height*fft->width/2;
+    double max = fft->r[guess_max_location];     // Set Maximum as any valid value
     int i_tot = fft->height * fft->width;   // Get stopping point
     int max_index = 0;
 
     // Find maximum input
+    START_TIMING(find_max_time);
     for (int i=0; i<i_tot; i++) {
         double r_pixel = fft->r[i]; // Set temporary values for efficiency
         double g_pixel = fft->g[i];
@@ -213,6 +216,7 @@ void rgb_normalize_fft(Image_RGB* fft, Lookup_1D* fft_normalizer_lookup) {
         if (max < g_pixel) {max = g_pixel;}
         if (max < b_pixel) {max = b_pixel;}
     }
+    END_TIMING(find_max_time, "finding the FFT max value");
 
     #ifdef VERBOSE
         printf("Maximum value found in the raw FFT: %f\n", max);
@@ -221,6 +225,7 @@ void rgb_normalize_fft(Image_RGB* fft, Lookup_1D* fft_normalizer_lookup) {
     // Set G_s
     Pixel G_s = 1/(2*log(sqrt(max) + 1));
     
+    START_TIMING(normalize_fft_time);
     // calculate normalized values
     for (int i=0; i<i_tot; i++) {
         if (fft->r[i] < 1) fft->r[i] = 0;
@@ -230,6 +235,7 @@ void rgb_normalize_fft(Image_RGB* fft, Lookup_1D* fft_normalizer_lookup) {
         if (fft->b[i] < 1) fft->b[i] = 0;
         else fft->b[i] = log(fft->b[i]) * G_s;
     }
+    END_TIMING(normalize_fft_time, "normalizing FFT values");
 
     #ifdef VERBOSE
         // Set Maximum as any valid value
@@ -247,3 +253,4 @@ void rgb_normalize_fft(Image_RGB* fft, Lookup_1D* fft_normalizer_lookup) {
         printf("Maximum value found in the normalized FFT: %f\n", max);
     #endif
 }
+

@@ -58,7 +58,6 @@ Blur_Profile_RGB* calculate_blur_profile(
                     int num_angle_bins);
 
 Image_RGB* get_blur_profile_visual(Blur_Profile_RGB* blur_profile, 
-                                   Cartesian_To_Polar* conversion, 
                                    int height, int width);
 
 void view_2d_array_contents(Bin** array, int height, int width);
