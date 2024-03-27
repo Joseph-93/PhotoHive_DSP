@@ -442,7 +442,7 @@ void group_irregular_pixels(Octree* octree) {
                     cur_group->num_pixels++;
                     octree->groups[cur_min_parent_id].quantity++;
                     // Check if the pixel update causes the crosses zero, unless it already has
-                    update_crosses_zero(cur_group, from_list->pixels[j].h);
+                    update_crosses_zero(&octree->groups[cur_min_parent_id], from_list->pixels[j].h);
                 }
                 from_list = from_list->next;
             }

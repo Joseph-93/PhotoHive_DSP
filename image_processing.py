@@ -443,7 +443,7 @@ def get_report(pil_image: Image,
                h_partitions=18, s_partitions=2, v_partitions=3,
                black_thresh=0.1, gray_thresh=0.1,
                coverage_thresh=0.90, linked_list_size=1000, downsample_rate=2,
-               radius_partitions=4, angle_partitions=18,
+               radius_partitions=40, angle_partitions=72,
                quantity_weight=0.1, saturation_value_weight=0.9):
     # Convert PIL image to Image_RGB
     width = pil_image.width
@@ -554,12 +554,10 @@ def run_demonstration():
 
     # Generate report
     report = get_report(image,
-                        coverage_thresh=.96,
-                        downsample_rate=3,
-                        radius_partitions=40,
-                        angle_partitions=72,
-                        quantity_weight=0.9,
-                        saturation_value_weight=0.1)
+                        coverage_thresh=.97,
+                        downsample_rate=1,
+                        quantity_weight=0.1,
+                        saturation_value_weight=0.9)
     report.image = image
 
     # Display images that represent image: blur profile and color palette
