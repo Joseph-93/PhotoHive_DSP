@@ -99,6 +99,7 @@ Blur_Profile_RGB* calculate_blur_profile(
         int phi_bin = (int)((phi+PI*0.5f)/PI * (double)(profile->num_angle_bins-1));
         // r_bin is sqrt(r^2/r_bin_size^2), but a newton int approximation
         int r_bin = newton_int_sqrt(((double)r_sq)/radius_bin_size_sq);
+        if (r_bin == num_radius_bins) r_bin--;
         bin_quant[phi_bin][r_bin]++;    // Increment the counter for how many pixels have been assigned to this bin
         profile->r_bins[phi_bin][r_bin] += r[i];    // Profile not locally stored like fft members because
         profile->g_bins[phi_bin][r_bin] += g[i];    // due to small size, it will likely all be stored in
@@ -123,8 +124,15 @@ Blur_Profile_RGB* calculate_blur_profile(
                 profile->b_bins[phi_bin][r_bin] = 0;
             }
         }
-    }
+    }    
     END_TIMING(average_bin_time, "calculating average of blur_profile bins");
+
+    // Clean up
+    for (int i=0; i < num_angle_bins; i++) {
+        free(bin_quant[i]); bin_quant[i] = NULL;
+    }
+    free(bin_quant); bin_quant = NULL;
+
     return profile;
 }
 
@@ -226,11 +234,11 @@ void blur_profile_tests(Image_RGB* fft) {
     char* visualization_filename = create_path(path, q, ".txt");
     write_image_to_file(blur_profile_visualization, visualization_filename);
     free(visualization_filename), visualization_filename = NULL;
-    free_image_rgb(blur_profile_visualization);
+    free_image_rgb(blur_profile_visualization); blur_profile_visualization = NULL;
     #endif
 
     // Free all function data
-    free_cartesian_to_polar(conversion);
+    free_cartesian_to_polar(conversion); conversion = NULL;
 }
 
 
@@ -271,13 +279,13 @@ Blur_Profile_RGB* get_blur_profile(Image_RGB* image, int num_radius_bins, int nu
     char* visualization_filename = create_path(path, q, ".txt");
     write_image_to_file(blur_profile_visualization, visualization_filename);
     free(visualization_filename), visualization_filename = NULL;
-    free_image_rgb(blur_profile_visualization);
+    free_image_rgb(blur_profile_visualization); blur_profile_visualization = NULL;
     #endif
 
     // Clean up
     START_TIMING(free_fft_time);
-    free_image_rgb(fft);
-    free_cartesian_to_polar(conversion);
+    free_image_rgb(fft); fft = NULL;
+    free_cartesian_to_polar(conversion); conversion = NULL;
     END_TIMING(free_fft_time, "freeing FFT structures");
     return blur_profile;
 }
@@ -338,9 +346,12 @@ void free_cartesian_to_polar(Cartesian_To_Polar* c2p) {
 
 
 void free_blur_profile_rgb(Blur_Profile_RGB* bp) {
-    free(bp->b_bins);
-    free(bp->g_bins);
-    free(bp->r_bins);
+    free_2d_array(bp->r_bins, bp->num_angle_bins);
+    free_2d_array(bp->g_bins, bp->num_angle_bins);
+    free_2d_array(bp->b_bins, bp->num_angle_bins);
+    bp->r_bins = NULL;
+    bp->g_bins = NULL;
+    bp->b_bins = NULL;
     free(bp);
     bp = NULL;
 }

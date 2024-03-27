@@ -7,12 +7,10 @@
 #include "utilities.h"
 #include "debug.h"
 
-#define DEBUG
-
 #define HUE_NORMALIZER (1.0)/(360.0)
-#define QUANTITY_WEIGHT 0.9
-#define SATURATION_VALUE_WEIGHT 0.1
-#define SATURATION_VALUE_THRESHOLD 0.6
+
+float QUANTITY_WEIGHT = 0.1;
+float SATURATION_VALUE_WEIGHT = 0.9;
 
 /******************************************************************************
  * initialize_octree sets up an octree according to hyperparamters and returns
@@ -71,6 +69,7 @@ Octree* initialize_octree(int h_parts,
                 octree->groups[i].id = i;
                 octree->groups[i].quantity = 0;
                 octree->groups[i].head = NULL;
+                octree->groups[i].crossed_zero = false;
             }
         }
     }
@@ -85,6 +84,7 @@ Octree* initialize_octree(int h_parts,
         octree->groups[i].id = i;
         octree->groups[i].quantity = 0;
         octree->groups[i].head = NULL;
+        octree->groups[i].crossed_zero = false;
     }
     
     // Initialize black group
@@ -95,6 +95,7 @@ Octree* initialize_octree(int h_parts,
     octree->groups[i].id = i;
     octree->groups[i].quantity = 0;
     octree->groups[i].head = NULL;
+    octree->groups[i].crossed_zero = false;
 
     return octree;
 }
@@ -106,7 +107,7 @@ Octree* initialize_octree(int h_parts,
 ******************************************************************************/
 void arm_octree(Image_HSV* hsv, Octree* octree, int HSV_Linked_List_Size) {
     // Create array of current octree group linked list nodes for use in the initialization.
-    HSV_Linked_List** list_curs = (HSV_Linked_List**)malloc(octree->total_length * sizeof(HSV_Linked_List*));
+    HSV_Linked_List** list_curs = (HSV_Linked_List**)calloc(octree->total_length, sizeof(HSV_Linked_List*));
     if (!list_curs) {
         fprintf(stderr, "ERROR: arm_octree() failed to malloc list_curs.");
         return;
@@ -115,6 +116,9 @@ void arm_octree(Image_HSV* hsv, Octree* octree, int HSV_Linked_List_Size) {
         // Set array values all to the heads of their respective linked lists.
         octree->groups[i].head = get_hsv_linked_list_node(HSV_Linked_List_Size);
         list_curs[i] = octree->groups[i].head;
+        // if (list_curs[i] == 0x55c37fef01c0) {
+        //     printf("")
+        // }
     }
 
     // Loop through all pixels
@@ -195,6 +199,17 @@ void find_valid_octree_parents(Octree* octree, int total_pixels, double coverage
     }
 
     fprintf(stderr, "ERROR: find_valid_octree_parents should not reach the end of its valid_parents loop");
+}
+
+
+/******************************************************************************
+ * consolidate_valid_octree_parents brings parents that are very similar into
+ *   one. If two parents appear to be the same value, it forces their pixels
+ *   into one. It only uses indices and manhatten distance to decide what is
+ *   close enough.
+******************************************************************************/
+void consolidate_valid_octree_parents(Octree* octree) {
+    return;
 }
 
 
@@ -287,7 +302,7 @@ Pixel get_node_distance_heuristic(Octree* octree, int groupid, int parentid) {
 double get_distance_pixel_to_parent(Pixel_HSV* pixel, Octree* octree, int parentid) {
     Octree_Group group = octree->groups[parentid];
     double h = fabs(pixel->h - group.h);
-    if (h>180) h = 360-h;
+    if (h > 180) h = 360-h;
     h *= HUE_NORMALIZER;
     double s = pixel->s - group.s;
     double v = pixel->v - group.v;
@@ -296,11 +311,36 @@ double get_distance_pixel_to_parent(Pixel_HSV* pixel, Octree* octree, int parent
 
 
 /******************************************************************************
+ * move_all_pixels_to_new_group moves the entire HSV_Linked_List list from one
+ *   octree group to another, updating quantities, cleaning as necessary, and
+ *   assuring that all pixels are moved from the from_list to the new list
+ *   properly.
+ *  -octree is the main octree object pointer
+ *  -cur_groups is the linked list that points to the farthest grouping of
+ *   HSV_Linked_Lists for each group in octree->groups.
+ *  -from_list is the pointer to the head of the HSV_Linked_List that needs
+ *   reassignation.
+ *  -closest_parent is the id of the octree group that from_list needs to be
+ *   appended to. it's the id of the destination.
+ *  -group_id is the id of the group that contains from_list.
+******************************************************************************/
+void move_all_pixels_to_new_group(Octree* octree, HSV_Linked_List** cur_groups, HSV_Linked_List* from_list, int closest_parent, int group_id);
+
+
+// Check if the difference between group.h and h crosses zero and update answer
+void update_crosses_zero(Octree_Group* group, Pixel h) {
+    if (abs(group->h - h) > 180) {
+        group->crossed_zero = true;
+    }
+}
+
+
+/******************************************************************************
  * group_irregular_pixels assigns pixels that are not part of a valid_parent.
 ******************************************************************************/
 void group_irregular_pixels(Octree* octree) {
     // initialize cur_groups to the latest HSV_Linked_List in each group
-    HSV_Linked_List** cur_groups = (HSV_Linked_List**)malloc(octree->total_length * sizeof(HSV_Linked_List*));
+    HSV_Linked_List** cur_groups = (HSV_Linked_List**)calloc(octree->total_length, sizeof(HSV_Linked_List*));
     for (int i=0; i<octree->total_length; i++) {
         cur_groups[i] = octree->groups[i].head;
         while(cur_groups[i]->next) {
@@ -309,7 +349,7 @@ void group_irregular_pixels(Octree* octree) {
     }
     // for node in octree:
     for (int i=0; i<octree->total_length; i++) {
-        // If the current value is already a valid_parent
+        // If the current value is already a valid_parent or is empty
         if (octree->groups[i].quantity == 0) {
             continue;
         }
@@ -401,6 +441,8 @@ void group_irregular_pixels(Octree* octree) {
                     cur_group->pixels[cur_group->i++] = from_list->pixels[j];
                     cur_group->num_pixels++;
                     octree->groups[cur_min_parent_id].quantity++;
+                    // Check if the pixel update causes the crosses zero, unless it already has
+                    update_crosses_zero(&octree->groups[cur_min_parent_id], from_list->pixels[j].h);
                 }
                 from_list = from_list->next;
             }
@@ -408,19 +450,21 @@ void group_irregular_pixels(Octree* octree) {
 
         // if there is only one nearest node
         else {
+            int closest_parent = closest_parents[0];
+            update_crosses_zero(&octree->groups[closest_parent], octree->groups[i].h);
             // every pixel goes to the nearest node
-            HSV_Linked_List* cur_group = cur_groups[closest_parents[0]];
+            HSV_Linked_List* cur_group = cur_groups[closest_parent];
             cur_group->num_pixels = cur_group->i;
             if (from_list->num_pixels != 0) {
                 cur_group->next = from_list;
             }
             // valid_parent.quantity += node.quantity
-            octree->groups[closest_parents[0]].quantity += octree->groups[i].quantity;
+            octree->groups[closest_parent].quantity += octree->groups[i].quantity;
             // node.quantity = 0
             octree->groups[i].quantity = 0;
             // get cur_group to the very back of cur_group+from_list
-            while(cur_groups[closest_parents[0]]->next) {
-                cur_groups[closest_parents[0]] = cur_groups[closest_parents[0]]->next;
+            while(cur_groups[closest_parent]->next) {
+                cur_groups[closest_parent] = cur_groups[closest_parent]->next;
             }
             // empty octree->groups[i] because it's been transferred to cur_group
             from_list = NULL;
@@ -474,6 +518,7 @@ Color_Palette* calculate_avg_hsv(Octree* octree, Image_HSV* hsv) {
     // Iterate through valid parents of octree
     for (int i=0; i<octree->len_valid_parents; i++) {
         int id = octree->valid_parents[i];
+        bool crossed_zero = octree->groups[id].crossed_zero;
         HSV_Linked_List* list = octree->groups[id].head;
         Pixel h_total = 0, s_total=0, v_total=0;
         int total_pixels = 0;
@@ -485,6 +530,7 @@ Color_Palette* calculate_avg_hsv(Octree* octree, Image_HSV* hsv) {
             for(int j=0; j<list->num_pixels; j++) {
                 // Get totals of the h,s,v values.
                 // NOTE: Use large data types, else precision will be lost here.
+                if (crossed_zero && list->pixels[j].h > 180) h_total -= 360;
                 h_total += list->pixels[j].h;
                 s_total += list->pixels[j].s;
                 v_total += list->pixels[j].v;
@@ -495,6 +541,7 @@ Color_Palette* calculate_avg_hsv(Octree* octree, Image_HSV* hsv) {
         // Store values in color palette structure
         double list_inverse_of_quantity = 1.0/(double)total_pixels;
         cp->averages[i].h = h_total * list_inverse_of_quantity;
+        if (crossed_zero && cp->averages[i].h < 0) {cp->averages[i].h += 360;}
         cp->averages[i].s = s_total * list_inverse_of_quantity;
         cp->averages[i].v = v_total * list_inverse_of_quantity;
         cp->percentages[i] = (double)total_pixels * inverse_of_quantity;
@@ -510,26 +557,13 @@ Color_Palette* calculate_avg_hsv(Octree* octree, Image_HSV* hsv) {
  *  -The equation is as follows:
  *      h(x,y)=If(x<THRESH, Y_WEIGHT*y, Y_WEIGHT*y + S_V_WEIGHT*(x-THRESH))
  *      where g is saliency, x is S*V, and y is quantity,
- *      Y_WEIGHT is QUANTITY WEIGHT, S_V_WEIGHT is SATURATION_VALUE_WEIGHT,
- *      and THRESH is SATURATION_VALUE_THRESHOLD.
+ *      Y_WEIGHT is QUANTITY WEIGHT, S_V_WEIGHT is SATURATION_VALUE_WEIGHT
  *      Visual of the model: https://www.geogebra.org/calculator/vuabsjrb
 ******************************************************************************/
 float saliency(const Octree_Group* group) {
     float saliency;
     float s_v = group->s * group->v;
-    // Equation1 implemented
-    // float weighted_quantity = ((float)group->quantity)*QUANTITY_WEIGHT;
-    // if (s_v > SATURATION_VALUE_THRESHOLD && weighted_quantity > 0.0) {
-    //     // The constant is guessing how high the highest quantity is as a percentage,
-    //     // To make sure that the weighted_s_v works with the quantity nicely.
-    //     float weighted_s_v = (s_v)*SATURATION_VALUE_WEIGHT*100;
-    //     saliency = weighted_quantity + weighted_s_v;
-    // }
-    // else {
-    //     saliency = weighted_quantity;
-    // }
 
-    // Equation2 implemented
     saliency = (float)group->quantity*(QUANTITY_WEIGHT+SATURATION_VALUE_WEIGHT*s_v);
 
     return saliency*1000; // simply multiply by 1000 to reduce issues in truncation
@@ -568,14 +602,25 @@ void free_octree(Octree* octree) {
     // Free each group and its linked lists
     for (int i = 0; i < octree->total_length; i++) {
         HSV_Linked_List* current_list = octree->groups[i].head;
+        int j = -1;
         while (current_list != NULL) {
+            j++;
             HSV_Linked_List* next_list = current_list->next;
 
+            printf("------->(%d,%d)", i, j);
+            printf("%p,\t%d\t", current_list->pixels, current_list->num_pixels);
+
+            printf("next: %p", current_list->next);
+            printf("<--------\n");
+
             // Free the pixels array of the current linked list node
-            free(current_list->pixels);
+            if (i!=69 || false) {
+                printf("frick at least I did it...\n");
+                free(current_list->pixels);
+                free(current_list);
+            }
 
             // Free the current linked list node itself
-            free(current_list);
 
             current_list = next_list;
         }
@@ -593,7 +638,13 @@ Color_Palette* get_color_palette(Image_HSV* hsv,
                                  const int linked_list_size,
                                  const double coverage_threshold,
                                  const int h_parts, const int s_parts, const int v_parts,
-                                 const double black_thresh, const double gray_thresh) {
+                                 const double black_thresh, const double gray_thresh,
+                                 float quantity_weight,
+                                 float saturation_value_weight) {
+
+    // Set up constants
+    QUANTITY_WEIGHT = quantity_weight;
+    SATURATION_VALUE_WEIGHT = saturation_value_weight;
 
     // Initialize Octree
     Octree* octree = initialize_octree(h_parts, s_parts, v_parts, black_thresh, gray_thresh);
