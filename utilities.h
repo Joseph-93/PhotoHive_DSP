@@ -39,6 +39,8 @@ void custom_sort(void *base, size_t nmemb, size_t size,
 
 bool ask_yes_no_question(const char *question);
 
+void free_2d_array(void** arr, int len);
+
 void normalize_array(Pixel* array, int length);
 
 Pixel get_variance_sharpness(Pixel* input, int height, int width);

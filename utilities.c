@@ -121,6 +121,12 @@ bool ask_yes_no_question(const char *question) {
 }
 
 
+void free_2d_array(void** arr, int len) {
+    for (int i=0; i<len; i++) {
+        free(arr[i]); arr[i] = NULL;
+    }
+    free(arr);
+}
 
 
 void normalize_array(Pixel* array, int length) {
@@ -164,7 +170,7 @@ Full_Report_Data* compile_full_report(RGB_Statistics* rgb_stats,
 void print_full_report(Full_Report_Data* data) {
     char* path = create_path("reports/", "Enter a report filename: ", ".txt");
     FILE* f = fopen(path, "w");
-    free(path);
+    free(path); path = NULL;
     fprintf(f, "FULL REPORT:\n");
     fprintf(f, "Variance-based Sharpness: %lf\n", data->sharpness);
     fprintf(f, "Average Saturation: %lf\n", data->average_saturation);

@@ -1,4 +1,7 @@
+import csv
+import io
 import ctypes
+import json
 import sys
 from math import atan2, pi, sqrt, cos, sin, radians
 from PIL import Image, ImageDraw, ImageFont
@@ -104,7 +107,8 @@ lib.get_full_report_data.argtypes = [ctypes.POINTER(Image_RGB),
                                      ctypes.c_int, ctypes.c_int, ctypes.c_int,
                                      ctypes.c_double, ctypes.c_double,
                                      ctypes.c_double, ctypes.c_int,
-                                     ctypes.c_int, ctypes.c_int, ctypes.c_int]
+                                     ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                     ctypes.c_float, ctypes.c_float]
 lib.get_blur_profile_visual.restype = ctypes.POINTER(Image_RGB)
 lib.get_blur_profile_visual.argtypes = [ctypes.POINTER(Blur_Profile_RGB), ctypes.c_int, ctypes.c_int]
 
@@ -306,48 +310,13 @@ class Report:
             transition_band = [angle_index, cur_max_i, cur_sig[cur_max_i]]
             transition_bands.append(transition_band)
         self.transition_bands = transition_bands
-
-        # LABEL ALL transition bands
-        for band in transition_bands:
-            angle_index = band[0]  # Assuming maxima contains angle indices
-
-            # Access the specific bin
-            g_bin_pointer = self.blur_profile.g_bins[angle_index]
-            radius_index = band[1]
-
-            # Get the actual array from the pointer
-            g_bin_array = ctypes.cast(g_bin_pointer, ctypes.POINTER(ctypes.c_double))
-
-            # Modify the value in the array
-            g_bin_array[radius_index] = 1.0
-        
-        # LABEL ALL MAXIMA
-        for max_angle in lesser_maxima:
-            angle_index = max_angle[0]  # Assuming maxima contains angle indices
-
-            # Access the specific bin
-            b_bin_pointer = self.blur_profile.b_bins[angle_index]
-            radius_index = self.blur_profile.num_radius_bins // 4
-
-            # Get the actual array from the pointer
-            b_bin_array = ctypes.cast(b_bin_pointer, ctypes.POINTER(ctypes.c_double))
-
-            # Modify the value in the array
-            b_bin_array[radius_index] = 1.0
-
-        # LABEL SIGNIFICANT MAXIMA
-        for max_angle in maxima:
-            angle_index = max_angle[0]  # Assuming maxima contains angle indices
-
-            # Access the specific bin
-            r_bin_pointer = self.blur_profile.r_bins[angle_index]
-            radius_index = self.blur_profile.num_radius_bins // 4
-
-            # Get the actual array from the pointer
-            r_bin_array = ctypes.cast(r_bin_pointer, ctypes.POINTER(ctypes.c_double))
-
-            # Modify the value in the array
-            r_bin_array[radius_index] = 1.0
+        self.blur_vectors = []
+        for band in self.transition_bands:
+            angle_index, radius_index, _ = band
+            arrow_length = (radius_index / self.blur_profile.num_radius_bins)
+            arrow_angle = int(180 * (angle_index / self.blur_profile.num_angle_bins) - 90)
+            blur_vector = [arrow_angle, arrow_length]
+            self.blur_vectors.append(blur_vector)
 
 
     def display_all(self):
@@ -403,6 +372,51 @@ class Report:
         window.mainloop()
 
 
+    def to_json(self):
+        # Define the maximum number of color entries
+        max_color_entries = 100
+        max_vector_entries = 10
+
+        # Start with basic statistics and blur profile data
+        report_data = {
+            'Height': self.rgb_stats.height,
+            'Width': self.rgb_stats.width,
+            'Average Saturation': self.average_saturation,
+            'Sharpness': self.sharpness,
+            'Red Brightness': self.rgb_stats.Br,
+            'Green Brightness': self.rgb_stats.Bg,
+            'Blue Brightness': self.rgb_stats.Bb,
+            'Red Contrast': self.rgb_stats.Cr,
+            'Green Contrast': self.rgb_stats.Cg,
+            'Blue Contrast': self.rgb_stats.Cb,
+        }
+        for i in range(max_vector_entries):
+            if i < len(self.blur_vectors):
+                angle, magnitude = self.blur_vectors[i]
+            else:
+                angle, magnitude = 0, 0
+            report_data[f'Blur Vector {i+1} Angle'] = angle
+            report_data[f'Blur Vector {i+1} Magnitude'] = magnitude
+
+
+        # Add color palette data, padding with zeros if necessary
+        for i in range(max_color_entries):
+            if i < len(self.color_palette.colors):
+                h, s, v = self.color_palette.colors[i]
+                percentage = self.color_palette.quantities[i]
+            else:
+                h, s, v, percentage = 0, 0, 0, 0
+
+            report_data[f'Color {i+1} H'] = h
+            report_data[f'Color {i+1} S'] = s
+            report_data[f'Color {i+1} V'] = v
+            report_data[f'Color {i+1} Percentage'] = percentage
+
+        # Convert the report data to a JSON string
+        json_data = json.dumps(report_data, indent=4)
+        return json_data
+
+
 def find_relative_maxima(data, avg, smooth_window=1):
     # Smooth the data to reduce noise
     smoothed_data = smooth_data(data, window_size=smooth_window)
@@ -426,10 +440,11 @@ def smooth_data(data, window_size=3):
 
 
 def get_report(pil_image: Image,
-               h_partitions=10, s_partitions=5, v_partitions=5,
+               h_partitions=18, s_partitions=2, v_partitions=3,
                black_thresh=0.1, gray_thresh=0.1,
-               coverage_thresh=0.90, linked_list_size=1000, downsample_rate=5,
-               radius_partitions=4, angle_partitions=18):
+               coverage_thresh=0.90, linked_list_size=1000, downsample_rate=2,
+               radius_partitions=4, angle_partitions=18,
+               quantity_weight=0.1, saturation_value_weight=0.9):
     # Convert PIL image to Image_RGB
     width = pil_image.width
     height = pil_image.height
@@ -442,7 +457,9 @@ def get_report(pil_image: Image,
                                                h_partitions, s_partitions, v_partitions,
                                                black_thresh, gray_thresh,
                                                coverage_thresh, linked_list_size, downsample_rate,
-                                               radius_partitions, angle_partitions)
+                                               radius_partitions, angle_partitions,
+                                               quantity_weight, saturation_value_weight
+                                               )
     
     end_time = time.time()  # End timing
     elapsed_time = end_time - start_time
@@ -536,7 +553,13 @@ def run_demonstration():
     image = Image.open(image_path+image_name)
 
     # Generate report
-    report = get_report(image, coverage_thresh=.95, downsample_rate=5, radius_partitions=40, angle_partitions=72)
+    report = get_report(image,
+                        coverage_thresh=.96,
+                        downsample_rate=3,
+                        radius_partitions=40,
+                        angle_partitions=72,
+                        quantity_weight=0.9,
+                        saturation_value_weight=0.1)
     report.image = image
 
     # Display images that represent image: blur profile and color palette
@@ -545,7 +568,8 @@ def run_demonstration():
     report.generate_blur_profile_image()
     # Display full user interface
     report.display_all()
-    report.color_palette
+    json = report.to_json()
+    print(json)
 
     lib.free_full_report(ctypes.byref(report.data_ptr))
 

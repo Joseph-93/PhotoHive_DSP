@@ -54,6 +54,8 @@ struct HSV_Linked_List {
  *  -head is the pointer to the HSV_Linked_List head.
  *  -is_valid_parent should default to false, but is set to true if the group
  *   is decided to be a valid parent.
+ *  -crossed_zero is used to track what colors allowed consolidation across the
+ *   H=0 boundary, so that averaging them can be done properly.
 ******************************************************************************/
 typedef struct Octree_Group {
     int id;
@@ -62,6 +64,7 @@ typedef struct Octree_Group {
     HSV_Linked_List* head;
     HSV_Linked_List* cur;
     bool is_valid_parent;
+    bool crossed_zero;
 } Octree_Group;
 
 
@@ -115,11 +118,18 @@ void arm_octree(Image_HSV* hsv, Octree* octree, int HSV_Linked_List_Size);
 
 void find_valid_octree_parents(Octree* octree, int total_pixels, double coverage_threshold);
 
+void consolidate_valid_octree_parents(Octree* octree);
+
 int* get_octree_hsv_coords(Octree* octree, int id);
 
 Pixel get_node_distance_heuristic(Octree* octree, int groupid, int parentid);
 
 double get_distance_pixel_to_parent(Pixel_HSV* pixel, Octree* octree, int parentid);
+
+void move_all_pixels_to_new_group(Octree* octree,
+                                  HSV_Linked_List** cur_groups, 
+                                  HSV_Linked_List* from_list, 
+                                  int closest_parent, int group_id);
 
 void group_irregular_pixels(Octree* octree);
 
@@ -139,7 +149,8 @@ Color_Palette* get_color_palette(Image_HSV* hsv,
                                  const int linked_list_size,
                                  const double coverage_threshold,
                                  const int h_parts, const int s_parts, const int v_parts,
-                                 const double black_thresh, const double gray_thresh);
-
+                                 const double black_thresh, const double gray_thresh,
+                                 float quantity_weight,
+                                 float saturation_value_weight);
 
 #endif
