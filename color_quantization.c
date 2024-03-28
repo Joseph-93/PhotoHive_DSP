@@ -187,6 +187,7 @@ void find_valid_octree_parents(Octree* octree, int total_pixels, double coverage
         goal_num_pixels -= octree->groups[sorted_ids[i]].quantity;
         // if goal_num_pixels is reached, set up valid_parents as 0 to i, and return.
         if (goal_num_pixels <= 0) {
+            i++;
             int* valid_parents = (int*)malloc(i*sizeof(int));
             for(int j=0; j<i; j++) {
                 valid_parents[j] = sorted_ids[j];
@@ -439,6 +440,7 @@ void group_irregular_pixels(Octree* octree) {
                     }
                     // Add pixel to proper cur_group, increment counters
                     cur_group->pixels[cur_group->i++] = from_list->pixels[j];
+                    from_list->pixels[j].h = 0; from_list->pixels[j].s = 0; from_list->pixels[j].v = 0;
                     cur_group->num_pixels++;
                     octree->groups[cur_min_parent_id].quantity++;
                     // Check if the pixel update causes the crosses zero, unless it already has
@@ -522,16 +524,33 @@ Color_Palette* calculate_avg_hsv(Octree* octree, Image_HSV* hsv) {
         HSV_Linked_List* list = octree->groups[id].head;
         Pixel h_total = 0, s_total=0, v_total=0;
         int total_pixels = 0;
+        double offset = 180 - octree->groups[id].h;
         // Iterate through all linked lists
         while(list) {
             // accumulate list's number of pixels to the total pixels
             total_pixels += list->num_pixels;
+            // temp_pix = pixel + offset
             // Iterate through pixels of linked lists
             for(int j=0; j<list->num_pixels; j++) {
                 // Get totals of the h,s,v values.
                 // NOTE: Use large data types, else precision will be lost here.
-                if (crossed_zero && list->pixels[j].h > 180) h_total -= 360;
-                h_total += list->pixels[j].h;
+				// if temp_pix > 360, temp_pix -= 360
+                double temp_pix = list->pixels[j].h + offset;
+                if (temp_pix > 360) {
+                    temp_pix -=360;
+                }
+				// else if temp_pix < 0:
+                else if (temp_pix < 0)
+	    			// 	temp_pix += 360
+		    		// total += temp_pix
+                    temp_pix += 360;
+                h_total += temp_pix;
+
+
+                // if (crossed_zero && list->pixels[j].h > 180) {
+                //     h_total -= 360;
+                // }
+                // h_total += list->pixels[j].h;
                 s_total += list->pixels[j].s;
                 v_total += list->pixels[j].v;
             }
@@ -541,7 +560,13 @@ Color_Palette* calculate_avg_hsv(Octree* octree, Image_HSV* hsv) {
         // Store values in color palette structure
         double list_inverse_of_quantity = 1.0/(double)total_pixels;
         cp->averages[i].h = h_total * list_inverse_of_quantity;
-        if (crossed_zero && cp->averages[i].h < 0) {cp->averages[i].h += 360;}
+        cp->averages[i].h -= offset;
+        if (cp->averages[i].h < 0) {
+            cp->averages[i].h += 360;
+        }
+        else if (cp->averages[i].h > 360) {
+            cp->averages[i].h -=360;
+        }
         cp->averages[i].s = s_total * list_inverse_of_quantity;
         cp->averages[i].v = v_total * list_inverse_of_quantity;
         cp->percentages[i] = (double)total_pixels * inverse_of_quantity;
@@ -607,21 +632,11 @@ void free_octree(Octree* octree) {
             j++;
             HSV_Linked_List* next_list = current_list->next;
 
-            printf("------->(%d,%d)", i, j);
-            printf("%p,\t%d\t", current_list->pixels, current_list->num_pixels);
-
-            printf("next: %p", current_list->next);
-            printf("<--------\n");
-
             // Free the pixels array of the current linked list node
-            if (i!=69 || false) {
-                printf("frick at least I did it...\n");
-                free(current_list->pixels);
-                free(current_list);
-            }
+            free(current_list->pixels);
+            free(current_list);
 
             // Free the current linked list node itself
-
             current_list = next_list;
         }
     }

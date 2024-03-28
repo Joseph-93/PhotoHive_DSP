@@ -117,6 +117,7 @@ class Report:
         # Use contents to get the actual data if report_ptr is a pointer
         # Use the [] operator if report_ptr is an array of structures
         report_data = report_ptr.contents
+        self.data_ptr = report_ptr
 
         self.rgb_stats = self._convert_rgb_statistics(report_data.rgb_stats)
         self.rgb_stats.height = height
@@ -238,7 +239,7 @@ class Report:
         self.blur_profile_image = img.crop((0, 0, width // 2, height))
 
     
-    def display_blur_profile(self):
+    def display_blur_profile(self, path):
         # Display the image
         window = tk.Tk()
         screen_width = int(window.winfo_screenwidth() * 0.9)
@@ -256,8 +257,7 @@ class Report:
 
         # Resize the image
         img_resized = self.blur_profile_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-        save_path = "images/output/blur_profile_" + image_name
-        self.blur_profile_image.save(save_path)  # Save the cropped image
+        self.blur_profile_image.save(path)  # Save the cropped image
         # Display the image
         tk_image = ImageTk.PhotoImage(img_resized)
         label = tk.Label(window, image=tk_image)
@@ -320,6 +320,14 @@ class Report:
 
 
     def display_all(self):
+        """
+            Creates a tkinter window, displaying all report statistics, the input image, and
+                a visual color palette.
+            REQUIRED:
+                -self.image must be manually set to the input image by the programmer
+                -self.generate_color_palette_image() MUST be called prior to self.display_all().
+                -
+        """
         window = tk.Tk()
         window.title("Image Analysis Report")
 
@@ -340,14 +348,22 @@ class Report:
         canvas.pack(side='left', padx=10)
         canvas.create_image(0, 0, anchor='nw', image=image_photo)
 
-        # Draw arrows representing transition bands
-        for band in self.transition_bands:
-            angle_index, radius_index, _ = band
-            arrow_length = (radius_index / self.blur_profile.num_radius_bins * image_photo.width())
-            arrow_angle = int(180 * (angle_index / self.blur_profile.num_angle_bins) - 90)
+        # Draw arrows representing blur vectors
+        for vector in self.blur_vectors:
+            arrow_angle = vector[0]
+            arrow_length = (vector[1] * image_photo.width())
             end_x = image_center_x + arrow_length * cos(radians(arrow_angle))
             end_y = image_center_y - arrow_length * sin(radians(arrow_angle))
             canvas.create_line(image_center_x, image_center_y, end_x, end_y, arrow='last', fill='red', width=2)
+
+        # Draw arrows representing transition bands
+        # for band in self.transition_bands:
+        #     angle_index, radius_index, _ = band
+        #     arrow_length = (radius_index / self.blur_profile.num_radius_bins * image_photo.width())
+        #     arrow_angle = int(180 * (angle_index / self.blur_profile.num_angle_bins) - 90)
+        #     end_x = image_center_x + arrow_length * cos(radians(arrow_angle))
+        #     end_y = image_center_y - arrow_length * sin(radians(arrow_angle))
+        #     canvas.create_line(image_center_x, image_center_y, end_x, end_y, arrow='last', fill='red', width=2)
 
         canvas.image = image_photo  # Keep a reference
 
@@ -415,6 +431,9 @@ class Report:
         # Convert the report data to a JSON string
         json_data = json.dumps(report_data, indent=4)
         return json_data
+    
+    def __del__(self):
+        lib.free_full_report(ctypes.byref(self.data_ptr))
 
 
 def find_relative_maxima(data, avg, smooth_window=1):
@@ -442,9 +461,10 @@ def smooth_data(data, window_size=3):
 def get_report(pil_image: Image,
                h_partitions=18, s_partitions=2, v_partitions=3,
                black_thresh=0.1, gray_thresh=0.1,
-               coverage_thresh=0.90, linked_list_size=1000, downsample_rate=2,
+               coverage_thresh=0.95, linked_list_size=1000, downsample_rate=1,
                radius_partitions=40, angle_partitions=72,
-               quantity_weight=0.1, saturation_value_weight=0.9):
+               quantity_weight=0.1, saturation_value_weight=0.9,
+               return_blur_profile=False):
     # Convert PIL image to Image_RGB
     width = pil_image.width
     height = pil_image.height
@@ -458,7 +478,8 @@ def get_report(pil_image: Image,
                                                black_thresh, gray_thresh,
                                                coverage_thresh, linked_list_size, downsample_rate,
                                                radius_partitions, angle_partitions,
-                                               quantity_weight, saturation_value_weight
+                                               quantity_weight, saturation_value_weight,
+                                               return_blur_profile
                                                )
     
     end_time = time.time()  # End timing
@@ -472,7 +493,6 @@ def get_report(pil_image: Image,
 
     # Convert the returned Full_Report_Data pointer to a Python object
     report = Report(report_data_ptr, height, width)
-    report.data_ptr = report_data_ptr
 
     return report
 
@@ -541,35 +561,29 @@ def image_rgb_to_pillow(image_rgb_ptr, width, height):
     return Image.fromarray(img_np, 'RGB')
 
 
-image_name = "12.png"
 def run_demonstration():
     global image_name
     image_path = "images/original/"
     # Check if a custom image path was provided as a command-line argument
     if len(sys.argv) > 1:
         image_name = sys.argv[1]
+    else:
+        image_name = "9.png"
 
     # Open image
     image = Image.open(image_path+image_name)
 
-    # Generate report
-    report = get_report(image,
-                        coverage_thresh=.97,
-                        downsample_rate=1,
-                        quantity_weight=0.1,
-                        saturation_value_weight=0.9)
+    # Set up report variables, and Generate report
+    report = get_report(image)
     report.image = image
 
     # Display images that represent image: blur profile and color palette
     report.vectorize_blur_profile()
     report.generate_color_palette_image()
-    report.generate_blur_profile_image()
     # Display full user interface
     report.display_all()
     json = report.to_json()
     print(json)
-
-    lib.free_full_report(ctypes.byref(report.data_ptr))
 
 
 if __name__ == "__main__":

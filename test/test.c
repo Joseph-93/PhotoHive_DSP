@@ -15,8 +15,8 @@ int main() {
     // Get image from files
     Image_RGB* image = read_image_from_files();
 
-    float coverage_thresh=.96;
-    int downsample_rate=3;
+    float coverage_thresh=.4;
+    int downsample_rate=1;
     int radius_partitions=40;
     int angle_partitions=72;
     float quantity_weight=0.9;
