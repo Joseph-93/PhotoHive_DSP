@@ -31,9 +31,9 @@
  *  -If the memory allocation for Blur_Profile_RGB or profile bins fail, the 
  *   function will return NULL.
 ******************************************************************************/
-Blur_Profile_RGB* calculate_blur_profile(
+Blur_Profile* calculate_blur_profile(
                     const Cartesian_To_Polar* conversion, 
-                    const Image_RGB* fft, 
+                    const Image_PGM* fft, 
                     int num_radius_bins, 
                     int num_angle_bins) {
     // Issue necessary warnings
@@ -46,7 +46,7 @@ Blur_Profile_RGB* calculate_blur_profile(
     }
 
     // Basic blur profile setup
-    Blur_Profile_RGB* profile = (Blur_Profile_RGB*)malloc(sizeof(Blur_Profile_RGB));
+    Blur_Profile* profile = (Blur_Profile*)malloc(sizeof(Blur_Profile));
     if (!profile) {
         fprintf(stderr, "ERROR: Memory allocation for blur profile failed.\n");
         return NULL;
@@ -61,26 +61,20 @@ Blur_Profile_RGB* calculate_blur_profile(
     radius_bin_size_sq = (double)((fft->width*fft->width + fft->height*fft->height/4) / (num_radius_bins*num_radius_bins));
 
     // Allocate space for empty bins
-    profile->r_bins = (Bin**)malloc(num_angle_bins * sizeof(Bin*));
-    profile->g_bins = (Bin**)malloc(num_angle_bins * sizeof(Bin*));
-    profile->b_bins = (Bin**)malloc(num_angle_bins * sizeof(Bin*));
-    if (!profile->r_bins || !profile->g_bins || !profile->b_bins) {
+    profile->bins = (Bin**)malloc(num_angle_bins * sizeof(Bin*));
+    if (!profile->bins) {
         fprintf(stderr, "ERROR: Memory allocation failed for r,g, or b bins.\n");
         return NULL;
     }
     for (int i=0; i<num_angle_bins; i++) {
-        profile->r_bins[i] = (Bin*)calloc(num_radius_bins, sizeof(Bin));
-        profile->g_bins[i] = (Bin*)calloc(num_radius_bins, sizeof(Bin));
-        profile->b_bins[i] = (Bin*)calloc(num_radius_bins, sizeof(Bin));
+        profile->bins[i] = (Bin*)calloc(num_radius_bins, sizeof(Bin));
     }
 
     // Sum up blurs in each bin space
     int conversion_height = conversion->height; // No need to perform member access every iteration
     int conversion_width = conversion->width;
     int i_tot = fft->height * fft->width;       // Store once to speed up by 1 multiply & 2 member accesses
-    const Pixel* r = fft->r;    // locally store array pointers to assure high performance in dereferencing
-    const Pixel* g = fft->g;
-    const Pixel* b = fft->b;
+    const Pixel* data = fft->data;    // locally store array pointers to assure high performance in dereferencing
     double max_phi = 0;
 
     // bin_quant counts number of pixels in each bin so the avg can be calculated
@@ -102,9 +96,7 @@ Blur_Profile_RGB* calculate_blur_profile(
         int r_bin = newton_int_sqrt(((double)r_sq)/radius_bin_size_sq);
         if (r_bin == num_radius_bins) r_bin--;
         bin_quant[phi_bin][r_bin]++;    // Increment the counter for how many pixels have been assigned to this bin
-        profile->r_bins[phi_bin][r_bin] += r[i];    // Profile not locally stored like fft members because
-        profile->g_bins[phi_bin][r_bin] += g[i];    // due to small size, it will likely all be stored in
-        profile->b_bins[phi_bin][r_bin] += b[i];    // CPU cache anyway. Access should be inexpensive
+        profile->bins[phi_bin][r_bin] += data[i];    // Profile not locally stored like fft members because
     }
     END_TIMING(accumulate_bins_time, "accumulating pixels to blur_profile bins");
 
@@ -115,14 +107,10 @@ Blur_Profile_RGB* calculate_blur_profile(
         for (int r_bin=0; r_bin<num_radius_bins; r_bin++) {
             bin_quantity = (Bin)bin_quant[phi_bin][r_bin];
             if (bin_quantity != 0) {
-                profile->r_bins[phi_bin][r_bin] /= bin_quantity;
-                profile->g_bins[phi_bin][r_bin] /= bin_quantity;
-                profile->b_bins[phi_bin][r_bin] /= bin_quantity;
+                profile->bins[phi_bin][r_bin] /= bin_quantity;
             }
             else {
-                profile->r_bins[phi_bin][r_bin] = 0;
-                profile->g_bins[phi_bin][r_bin] = 0;
-                profile->b_bins[phi_bin][r_bin] = 0;
+                profile->bins[phi_bin][r_bin] = 0;
             }
         }
     }    
@@ -149,10 +137,10 @@ Blur_Profile_RGB* calculate_blur_profile(
  *   actual fft, and as num_radius_bins and num_angle_bins increases it should
  *   come to approximate the fft itself.
 ******************************************************************************/
-Image_RGB* get_blur_profile_visual(Blur_Profile_RGB* blur_profile, 
+Image_PGM* get_blur_profile_visual(Blur_Profile* blur_profile, 
                                    int height, int width) {
     // Allocate memory for an RGB image, with height and width
-    Image_RGB* output_image = create_rgb_image(width, height);
+    Image_PGM* output_image = create_pgm_image(width, height);
 
     if (!output_image) {
         fprintf(stderr, "Error creating output image.\n");
@@ -183,10 +171,8 @@ Image_RGB* get_blur_profile_visual(Blur_Profile_RGB* blur_profile,
                 phi_bin = 0;
             }
 
-            // Direct assignment without inappropriate mirroring
-            output_image->r[y_times_width + x] = blur_profile->r_bins[phi_bin][r_bin];
-            output_image->g[y_times_width + x] = blur_profile->g_bins[phi_bin][r_bin];
-            output_image->b[y_times_width + x] = blur_profile->b_bins[phi_bin][r_bin];
+            // Direct assignment without unnecessary mirroring
+            output_image->data[y_times_width + x] = blur_profile->bins[phi_bin][r_bin];
         }
         y_times_width += width;
     }
@@ -216,26 +202,27 @@ void view_2d_array_contents(Bin** array, int height, int width) {
  *  -Function is used for development, as it prompts the user for command-line
  *   inputs.
 ******************************************************************************/
-void blur_profile_tests(Image_RGB* fft) {
+void blur_profile_tests(Image_PGM* fft) {
     // Calculate bin-approximated FFT
     Cartesian_To_Polar* conversion;   // Create cartesian to polar conversion
     conversion = cartesian_to_polar_conversion(fft->width, fft->height);
     int num_radius_bins = 4;    // Set up pseudo-hyperparameters
     int num_angle_bins = 18;
-    Blur_Profile_RGB* blur_profile; // Calculate the blur profile
+    Blur_Profile* blur_profile; // Calculate the blur profile
     blur_profile = calculate_blur_profile(conversion, fft, num_radius_bins, num_angle_bins);
 
     #ifdef DEBUG
     // Create image representation of bin-approximated FFT
-    Image_RGB* blur_profile_visualization = get_blur_profile_visual(blur_profile, fft->height, fft->width);
-
+    Image_PGM* blur_profile_visualization = get_blur_profile_visual(blur_profile, fft->height, fft->width);
+    Image_RGB* vis = pgm2rgb(blur_profile_visualization);
     // Save image representation of bin-approximated FFT
     const char* path = "images/visualizations/";
     const char* q = "\nEnter visualization filename: ";
     char* visualization_filename = create_path(path, q, ".txt");
-    write_image_to_file(blur_profile_visualization, visualization_filename);
+    write_image_to_file(vis, visualization_filename);
     free(visualization_filename), visualization_filename = NULL;
-    free_image_rgb(blur_profile_visualization); blur_profile_visualization = NULL;
+    free_image_rgb(vis); vis = NULL;
+    free_image_pgm(blur_profile_visualization); blur_profile_visualization = NULL;
     #endif
 
     // Free all function data
@@ -252,10 +239,10 @@ void blur_profile_tests(Image_RGB* fft) {
  *   the size of each polar-coordinate FFT bin, and therefore the granularity
  *   of the FFT measurement.
 ******************************************************************************/
-Blur_Profile_RGB* get_blur_profile(Image_RGB* image, int num_radius_bins, int num_angle_bins) {
+Blur_Profile* get_blur_profile(Image_PGM* pgm, int num_radius_bins, int num_angle_bins) {
     // Calculate FFT
     START_TIMING(compute_mag_fft_time);
-    Image_RGB* fft = compute_magnitude_fft(image);
+    Image_PGM* fft = compute_magnitude_fft(pgm);
     END_TIMING(compute_mag_fft_time, "computing the magnitude fft");
 
     // Create cartesian to polar conversion
@@ -266,26 +253,28 @@ Blur_Profile_RGB* get_blur_profile(Image_RGB* image, int num_radius_bins, int nu
 
     // Calculate the blur profile
     START_TIMING(calc_blur_profile_time);
-    Blur_Profile_RGB* blur_profile;
+    Blur_Profile* blur_profile;
     blur_profile = calculate_blur_profile(conversion, fft, num_radius_bins, num_angle_bins);
     END_TIMING(calc_blur_profile_time, "calculate_blur_profile");
     
     #ifdef DEBUG
     // Create image representation of bin-approximated FFT
-    Image_RGB* blur_profile_visualization = get_blur_profile_visual(blur_profile, fft->height, fft->width);
+    Image_PGM* blur_profile_visualization = get_blur_profile_visual(blur_profile, fft->height, fft->width);
+    Image_RGB* vis = pgm2rgb(blur_profile_visualization);
 
     // Save image representation of bin-approximated FFT
     const char* path = "images/visualizations/";
     const char* q = "\nEnter visualization filename: ";
     char* visualization_filename = create_path(path, q, ".txt");
-    write_image_to_file(blur_profile_visualization, visualization_filename);
+    write_image_to_file(vis, visualization_filename);
     free(visualization_filename), visualization_filename = NULL;
-    free_image_rgb(blur_profile_visualization); blur_profile_visualization = NULL;
+    free_image_rgb(vis); vis = NULL;
+    free_image_pgm(blur_profile_visualization); blur_profile_visualization = NULL;
     #endif
 
     // Clean up
     START_TIMING(free_fft_time);
-    free_image_rgb(fft); fft = NULL;
+    free_image_pgm(fft); fft = NULL;
     free_cartesian_to_polar(conversion); conversion = NULL;
     END_TIMING(free_fft_time, "freeing FFT structures");
     return blur_profile;
@@ -293,24 +282,18 @@ Blur_Profile_RGB* get_blur_profile(Image_RGB* image, int num_radius_bins, int nu
 
 
 // Create an instance of Blur_Vector_RGB
-Blur_Vector_RGB* initialize_blur_vector_rgb(int len_vectors) {
-    Blur_Vector_RGB* blur_vectors_rgb = (Blur_Vector_RGB*)calloc(1, sizeof(Blur_Vector_RGB));
-    blur_vectors_rgb->blur_vectors_rgb = (Blur_Vector**)malloc(3*sizeof(Blur_Vector*));
-    for (int i=0; i<3; i++) {
-        blur_vectors_rgb->blur_vectors_rgb[i] = (Blur_Vector*)calloc(10, sizeof(Blur_Vector));
-    }
-    blur_vectors_rgb->len_vectors = len_vectors;
-    return blur_vectors_rgb;
+Blur_Vector_Group* initialize_blur_vector_group(int len_vectors) {
+    Blur_Vector_Group* blur_vector_group = (Blur_Vector_Group*)calloc(1, sizeof(Blur_Vector_Group));
+    blur_vector_group->blur_vectors = (Blur_Vector*)calloc(len_vectors, sizeof(Blur_Vector));
+    blur_vector_group->len_vectors = len_vectors;
+    return blur_vector_group;
 }
 
 
 // Free Blur_Vector_RGB object
-void free_blur_vectors_rgb(Blur_Vector_RGB* bv) {
-    for (int i=0; i<3; i++) {
-        free(bv->blur_vectors_rgb[i]);
-        bv->blur_vectors_rgb[i] = NULL;
-    }
-    bv->blur_vectors_rgb = NULL;
+void free_blur_vectors_rgb(Blur_Vector_Group* bv) {
+    free(bv->blur_vectors);
+    bv->blur_vectors = NULL;
     free(bv);
 }
 
@@ -326,97 +309,82 @@ void free_blur_vectors_rgb(Blur_Vector_RGB* bv) {
  *  -cutoff_ration_denom represents the proportion (1/cutoff) of the total
  *   radius bins used to calculate the average that to vets possible maxima.
 ******************************************************************************/
-Blur_Vector_RGB* vectorize_blur_profile(Blur_Profile_RGB* blur_profile,
+Blur_Vector_Group* vectorize_blur_profile(Blur_Profile* blur_profile,
                                         Pixel error_thresh,
                                         Pixel mag_thresh,
                                         int cutoff_ratio_denom) {
-    Blur_Vector_RGB* bv = initialize_blur_vector_rgb(10);
-    Blur_Vector** blur_vectors = bv->blur_vectors_rgb;
+    Blur_Vector_Group* bv = initialize_blur_vector_group(10);
+    Blur_Vector* blur_vectors = bv->blur_vectors;
 
     // Store common values for easy use
     int num_angle_bins = blur_profile->num_angle_bins;
     int num_radius_bins = blur_profile->num_radius_bins;
 
-    for(int color=0; color < 3; color++) {
-        // Assign the current color of bins to use
-        Bin** bins;
-        switch (color) {
-            case 0:
-                bins = blur_profile->r_bins;
+    Bin** bins = blur_profile->bins;
+
+    // Assign the current color of bins to use
+    Pixel* tot = (Pixel*)calloc(num_angle_bins, sizeof(Pixel));
+
+    // Get average of bins, and total of first half of the radii, per angle
+    Pixel avg = 0;
+    int radius_cutoff = num_radius_bins/cutoff_ratio_denom;
+    for (int i=0; i<num_angle_bins; i++) {
+        for (int j=0; j<radius_cutoff; j++) {
+            tot[i] += bins[i][j];
+        }
+        avg += tot[i];
+    }
+    avg /= num_angle_bins;
+
+    // Smooth the data to reduce noise
+    int smooth_size = 5;
+    Pixel* smoother = initialize_1d_smooth_filter(smooth_size);
+    Pixel* smooth = convolve_1d(tot, smoother, num_angle_bins, smooth_size);
+    
+    // Find maxima in the smoothed data
+    Blur_Vector maxima[10];
+    int maxima_idx = 0;
+    if (smooth[0] > smooth[num_angle_bins-1] && smooth[0] > smooth[1]) {
+        if (smooth[0] > avg * error_thresh && maxima_idx < 10) {
+            maxima[maxima_idx].angle = 0;
+            maxima[maxima_idx++].magnitude = tot[0];
+        }
+    }
+    for (int i=1; i<num_angle_bins-1; i++) {
+        if (smooth[i] > smooth[i-1] && smooth[i] > smooth[i+1]) {
+            if (smooth[i] > avg * error_thresh && maxima_idx < 10) {
+                maxima[maxima_idx].angle = i;
+                maxima[maxima_idx++].magnitude = tot[i]/radius_cutoff;
+            }
+        }
+    }
+    if (smooth[num_angle_bins-1] > smooth[num_angle_bins-2] && smooth[num_angle_bins-1] > smooth[0]) {
+        if (smooth[num_angle_bins-1] > avg * error_thresh && maxima_idx < 10) {
+            maxima[maxima_idx].angle = num_angle_bins-1;
+            maxima[maxima_idx++].magnitude = tot[num_angle_bins-1]/radius_cutoff;
+        }
+    }
+    free(tot);
+
+    // for max_angle in maxima:
+    for (int i=0; i<maxima_idx; i++) {
+        // Adjust angle_index to be within the valid range
+        int angle_idx = (maxima[i].angle + num_angle_bins/2) % num_angle_bins;
+        // Get the signal for the current angle
+        Pixel* cur_sig = bins[angle_idx];
+
+        // Find the index where the signal falls below the threshold
+        int cur_max_radius = num_radius_bins;
+        for (int j=0; j<num_radius_bins; j++) {
+            if (cur_sig[j] < mag_thresh) {
+                cur_max_radius = j;
                 break;
-            case 1:
-                bins = blur_profile->g_bins;
-                break;
-            case 2:
-                bins = blur_profile->b_bins;
-                break;
-            default:
-                printf("Error: color was outside of [0,2]. color: %d", color);
-                return NULL;
-        }
-        Pixel* tot = (Pixel*)calloc(num_angle_bins, sizeof(Pixel));
-
-        // Get average of bins, and total of first half of the radii, per angle
-        Pixel avg = 0;
-        int radius_cutoff = num_radius_bins/cutoff_ratio_denom;
-        for (int i=0; i<num_angle_bins; i++) {
-            for (int j=0; j<radius_cutoff; j++) {
-                tot[i] += bins[i][j];
-            }
-            avg += tot[i];
-        }
-        avg /= num_angle_bins;
-
-        // Smooth the data to reduce noise
-        int smooth_size = 5;
-        Pixel* smoother = initialize_1d_smooth_filter(smooth_size);
-        Pixel* smooth = convolve_1d(tot, smoother, num_angle_bins, smooth_size);
-        
-        // Find maxima in the smoothed data
-        Blur_Vector maxima[10];
-        int maxima_idx = 0;
-        if (smooth[0] > smooth[num_angle_bins-1] && smooth[0] > smooth[1]) {
-            if (smooth[0] > avg * error_thresh && maxima_idx < 10) {
-                maxima[maxima_idx].angle = 0;
-                maxima[maxima_idx++].magnitude = tot[0];
-            }
-        }
-        for (int i=1; i<num_angle_bins-1; i++) {
-            if (smooth[i] > smooth[i-1] && smooth[i] > smooth[i+1]) {
-                if (smooth[i] > avg * error_thresh && maxima_idx < 10) {
-                    maxima[maxima_idx].angle = i;
-                    maxima[maxima_idx++].magnitude = tot[i]/radius_cutoff;
-                }
-            }
-        }
-        if (smooth[num_angle_bins-1] > smooth[num_angle_bins-2] && smooth[num_angle_bins-1] > smooth[0]) {
-            if (smooth[num_angle_bins-1] > avg * error_thresh && maxima_idx < 10) {
-                maxima[maxima_idx].angle = num_angle_bins-1;
-                maxima[maxima_idx++].magnitude = tot[num_angle_bins-1]/radius_cutoff;
             }
         }
 
-        // for max_angle in maxima:
-        for (int i=0; i<maxima_idx; i++) {
-            // Adjust angle_index to be within the valid range
-            int angle_idx = (maxima[i].angle + num_angle_bins/2) % num_angle_bins;
-            // Get the signal for the current angle
-            Pixel* cur_sig = bins[angle_idx];
-
-            // Find the index where the signal falls below the threshold
-            int cur_max_radius = num_radius_bins;
-            for (int j=0; j<num_radius_bins; j++) {
-                if (cur_sig[j] < mag_thresh) {
-                    cur_max_radius = j;
-                    break;
-                }
-            }
-
-            // Calculate and store relative magnitude and angle
-            blur_vectors[color][i].magnitude = ((float)cur_max_radius / (float)num_radius_bins);
-            blur_vectors[color][i].angle = (int)(180 * ((float)angle_idx / (float)num_angle_bins) - 90);
-        }
-        free(tot);
+        // Calculate and store relative magnitude and angle
+        blur_vectors[i].magnitude = ((float)cur_max_radius / (float)num_radius_bins);
+        blur_vectors[i].angle = (int)(180 * ((float)angle_idx / (float)num_angle_bins) - 90);
     }
     return bv;
 }
@@ -476,18 +444,15 @@ void free_cartesian_to_polar(Cartesian_To_Polar* c2p) {
 }
 
 
-void free_blur_profile_rgb(Blur_Profile_RGB* bp) {
-    free_2d_array(bp->r_bins, bp->num_angle_bins);
-    free_2d_array(bp->g_bins, bp->num_angle_bins);
-    free_2d_array(bp->b_bins, bp->num_angle_bins);
-    bp->r_bins = NULL;
-    bp->g_bins = NULL;
-    bp->b_bins = NULL;
+void free_blur_profile(Blur_Profile* bp) {
+    free_2d_array(bp->bins, bp->num_angle_bins);
+    bp->bins = NULL;
     free(bp);
     bp = NULL;
 }
 
 
-void free_blur_vectors(Blur_Vector_RGB* bv) {
-    
+void free_blur_vector_group(Blur_Vector_Group* bv) {
+    free(bv->blur_vectors); bv->blur_vectors = NULL;
+    free(bv);
 }

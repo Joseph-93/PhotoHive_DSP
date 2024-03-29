@@ -71,8 +71,8 @@ Full_Report_Data* get_full_report_data(Image_RGB* image, Crop_Boundaries* crop_b
 
     // Get blur profile
     START_TIMING(blur_profile_time);
-    Blur_Profile_RGB* bp = get_blur_profile(image, radius_partitions, angle_partitions);
-    Blur_Vector_RGB* bv = vectorize_blur_profile(bp, fft_streak_thresh, magnitude_thresh, blur_cutoff_ratio_denom);
+    Blur_Profile* bp = get_blur_profile(pgm, radius_partitions, angle_partitions);
+    Blur_Vector_Group* bv = vectorize_blur_profile(bp, fft_streak_thresh, magnitude_thresh, blur_cutoff_ratio_denom);
     END_TIMING(blur_profile_time, "blur profile");
 
     START_TIMING(compile_report_time);
@@ -91,8 +91,8 @@ Full_Report_Data* get_full_report_data(Image_RGB* image, Crop_Boundaries* crop_b
 
 void free_full_report(Full_Report_Data** report) {
     free_color_palette((*report)->color_palette); (*report)->color_palette = NULL;
-    free_blur_profile_rgb((*report)->blur_profile); (*report)->blur_profile = NULL;
-    free_blur_vectors_rgb((*report)->blur_vectors); (*report)->blur_vectors = NULL;
+    free_blur_profile((*report)->blur_profile); (*report)->blur_profile = NULL;
+    free_blur_vector_group((*report)->blur_vectors); (*report)->blur_vectors = NULL;
     if ((*report)->sharpness != NULL) {
         free((*report)->sharpness->sharpness); (*report)->sharpness->sharpness = NULL;
         free((*report)->sharpness); (*report)->sharpness = NULL;

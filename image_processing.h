@@ -124,7 +124,7 @@ Image_RGB* read_image_from_files();
 
 Image_RGB* downsample_rgb(Image_RGB* image, short N);
 
-void validate_coordinates(Image_RGB* array, int x, int y, int* errors);
+void validate_coordinates(Image_PGM* array, int x, int y, int* errors);
 
 Image_PGM* rgb2pgm(Image_RGB* rgb);
 

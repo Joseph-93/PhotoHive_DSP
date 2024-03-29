@@ -8,6 +8,8 @@
 #include "../utilities.h"
 #include "../interface.h"
 
+#include <stdlib.h>
+
 
 int main() {
     printf("hello there!");
@@ -34,10 +36,10 @@ int main() {
 
     Crop_Boundaries* crop_boundaries = (Crop_Boundaries*)malloc(sizeof(Crop_Boundaries));
     crop_boundaries->N      = 3;
-    crop_boundaries->left   = (Pixel*)malloc(3 * sizeof(Pixel));
-    crop_boundaries->right  = (Pixel*)malloc(3 * sizeof(Pixel));
-    crop_boundaries->top    = (Pixel*)malloc(3 * sizeof(Pixel));
-    crop_boundaries->bottom = (Pixel*)malloc(3 * sizeof(Pixel));
+    crop_boundaries->left   = (int*)malloc(3 * sizeof(int));
+    crop_boundaries->right  = (int*)malloc(3 * sizeof(int));
+    crop_boundaries->top    = (int*)malloc(3 * sizeof(int));
+    crop_boundaries->bottom = (int*)malloc(3 * sizeof(int));
 
     crop_boundaries->left[0]   =  61;
     crop_boundaries->right[0]  = 383;

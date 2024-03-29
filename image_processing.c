@@ -465,7 +465,7 @@ Image_RGB* hsv2rgb(Image_HSV* hsv) {
  * @param y The y-coordinate to validate.
  * @param errors Pointer to an integer that tracks the total number of errors.
 ******************************************************************************/
-void validate_coordinates(Image_RGB* array, int x, int y, int* errors) {
+void validate_coordinates(Image_PGM* array, int x, int y, int* errors) {
     if (x>=array->width) {
         *errors +=1;
         fprintf(stderr, "ERROR %3d: x is above the array width: x=%3d, width=%3d.\n", *errors, x, array->width);

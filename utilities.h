@@ -27,8 +27,8 @@ typedef struct Sharpnesses {
 typedef struct Full_Report_Data {
     RGB_Statistics* rgb_stats;
     Color_Palette* color_palette;
-    Blur_Profile_RGB* blur_profile;
-    Blur_Vector_RGB* blur_vectors;
+    Blur_Profile* blur_profile;
+    Blur_Vector_Group* blur_vectors;
     Pixel average_saturation;
     Sharpnesses* sharpness;
 } Full_Report_Data;
@@ -51,8 +51,8 @@ void normalize_array(Pixel* array, int length);
 
 Full_Report_Data* compile_full_report(RGB_Statistics* rgb_stats,
                                       Color_Palette* color_palette,
-                                      Blur_Profile_RGB* blur_profile,
-                                      Blur_Vector_RGB* blur_vectors_rgb,
+                                      Blur_Profile* blur_profile,
+                                      Blur_Vector_Group* blur_vectors,
                                       Pixel average_saturation,
                                       Sharpnesses* sharpness);
 

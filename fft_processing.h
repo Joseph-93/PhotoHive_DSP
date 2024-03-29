@@ -17,14 +17,14 @@ typedef struct Lookup_1D {
 } Lookup_1D;
 
 
-Image_RGB* rgb_fft(Image_RGB* image);
+Image_PGM* pgm_fft(Image_PGM* pgm);
 
-Image_RGB* compute_magnitude_fft(Image_RGB* image);
+Image_PGM* compute_magnitude_fft(Image_PGM* pgm);
 
-void save_fft(Image_RGB* fft);
+void save_fft(Image_PGM* fft);
 
-Image_RGB* fft_shift(Image_RGB* fft);
+Image_PGM* fft_shift(Image_PGM* fft);
 
-void rgb_normalize_fft(Image_RGB* fft, Lookup_1D* fft_normalizer_lookup);
+void pgm_normalize_fft(Image_PGM* fft, Lookup_1D* fft_normalizer_lookup);
 
 #endif
