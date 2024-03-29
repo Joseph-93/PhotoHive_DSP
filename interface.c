@@ -18,24 +18,17 @@
 
 
 Full_Report_Data* get_full_report_data(Image_RGB* image,
-                                       int h_partitions, int s_partitions, int v_partitions,
-                                       double black_thresh, double gray_thresh,
-                                       double coverage_thresh, int linked_list_size,
-                                       int downsample_rate, int radius_partitions, int angle_partitions,
-                                       float quantity_weight, float saturation_value_weight
-                                       ) {
+                  int h_partitions, int s_partitions, int v_partitions,
+                  double black_thresh, double gray_thresh,
+                  double coverage_thresh, int linked_list_size,
+                  int downsample_rate, int radius_partitions, int angle_partitions,
+                  float quantity_weight, float saturation_value_weight,
+                  double fft_streak_thresh, double magnitude_thresh, int blur_cutoff_ratio_denom
+                  ) {
     setbuf(stdout, NULL);
 
     threading_setup();
     printf("\n There are %d cores available to the C program.\n\n", num_cores);
-    // printf("H partitions: %d, S partitions: %d, V partitions: %d, "
-    //     "Black threshold: %.2f, Gray threshold: %.2f, "
-    //     "Coverage threshold: %.2f, Linked list size: %d, "
-    //     "Downsample rate: %d, Radius partitions: %d, Angle partitions: %d\n",
-    //     h_partitions, s_partitions, v_partitions,
-    //     black_thresh, gray_thresh,
-    //     coverage_thresh, linked_list_size,
-    //     downsample_rate, radius_partitions, angle_partitions);
 
     // Downsample RGB image
     START_TIMING(downsample_time);
@@ -79,10 +72,11 @@ Full_Report_Data* get_full_report_data(Image_RGB* image,
     // Get blur profile
     START_TIMING(blur_profile_time);
     Blur_Profile_RGB* bp = get_blur_profile(image, radius_partitions, angle_partitions);
+    Blur_Vector_RGB* bv = vectorize_blur_profile(bp, fft_streak_thresh, magnitude_thresh, blur_cutoff_ratio_denom);
     END_TIMING(blur_profile_time, "blur profile");
 
     START_TIMING(compile_report_time);
-    Full_Report_Data* full_report = compile_full_report(rgb_stats, cp, bp, S_bar, variance_sharpness);
+    Full_Report_Data* full_report = compile_full_report(rgb_stats, cp, bp, bv, S_bar, variance_sharpness);
     END_TIMING(compile_report_time, "compile full report");
 
     // Free data
@@ -98,6 +92,7 @@ Full_Report_Data* get_full_report_data(Image_RGB* image,
 void free_full_report(Full_Report_Data** report) {
     free_color_palette((*report)->color_palette); (*report)->color_palette = NULL;
     free_blur_profile_rgb((*report)->blur_profile); (*report)->blur_profile = NULL;
+    free_blur_vectors_rgb((*report)->blur_vectors); (*report)->blur_vectors = NULL;
     free((*report)->rgb_stats);
     
     free((*report)); *report = NULL;

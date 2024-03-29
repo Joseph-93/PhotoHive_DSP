@@ -2,7 +2,36 @@
 #include <stdlib.h>
 #include <math.h>
 
+
 #define THRESHOLD 0.2
+
+
+/******************************************************************************
+ * convolve_1d is exactly what it sounds like.
+******************************************************************************/
+Pixel* convolve_1d(Pixel* x, Pixel* h, int x_len, int h_len) {
+    Pixel* result = (Pixel*)calloc(x_len, sizeof(Pixel));  // Result array initialized with zeros
+    for (int i = 0; i < x_len; i++) {
+        for (int j = 0; j < h_len; j++) {
+            int wrapped_index = (i - j + x_len) % x_len;  // Wrap-around index calculation
+            result[i] += x[wrapped_index] * h[j];
+        }
+    }
+    for (int i=0; i<x_len; i++) {
+        result[i] /= h_len;
+    }
+    return result;
+}
+
+
+// Initialize a filter used for smoothing the signal
+Pixel* initialize_1d_smooth_filter(int size) {
+    Pixel* filter = (Pixel*)malloc(size * sizeof(Pixel));
+    for(int i=0; i<size; i++) {
+        filter[i] = 1;
+    }
+    return filter;
+}
 
 
 /******************************************************************************

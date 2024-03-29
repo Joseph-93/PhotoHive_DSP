@@ -10,6 +10,10 @@ typedef struct Filter {
     double* coefs;
 } Filter;
 
+Pixel* convolve_1d(Pixel* x, Pixel* h, int x_len, int y_len);
+
+Pixel* initialize_1d_smooth_filter(int size);
+
 Filter* initialize_3x3_laplacian();
 
 Pixel get_variance(Pixel* input, int length, Pixel average);

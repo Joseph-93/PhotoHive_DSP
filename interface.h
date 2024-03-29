@@ -14,12 +14,13 @@
 
 
 Full_Report_Data* get_full_report_data(Image_RGB* image,
-                                       int h_partitions, int s_partitions, int v_partitions,
-                                       double black_thresh, double gray_thresh,
-                                       double coverage_thresh, int linked_list_size,
-                                       int downsample_rate, int radius_partitions, int angle_partitions,
-                                       float quantity_weight, float saturation_value_weight
-                                       );
+                  int h_partitions, int s_partitions, int v_partitions,
+                  double black_thresh, double gray_thresh,
+                  double coverage_thresh, int linked_list_size,
+                  int downsample_rate, int radius_partitions, int angle_partitions,
+                  float quantity_weight, float saturation_value_weight,
+                  double fft_streak_thresh, double magnitude_thresh, int blur_cutoff_ratio_denom
+                  );
 
 
 void free_full_report(Full_Report_Data** report);

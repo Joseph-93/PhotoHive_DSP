@@ -27,6 +27,9 @@ int main() {
     float black_thresh=0.1;
     float gray_thresh=0.1;
     int linked_list_size=1000;
+    double fft_streak_thresh=1.1;
+    double magnitude_thresh=0.3;
+    int blur_cutoff_ratio_denom=2;
 
     // Arm full report
     Full_Report_Data* full_report_data = get_full_report_data(image,
@@ -34,7 +37,8 @@ int main() {
                                          black_thresh, gray_thresh, coverage_thresh, 
                                          linked_list_size, downsample_rate, 
                                          radius_partitions, angle_partitions, 
-                                         quantity_weight, saturation_value_weight);
+                                         quantity_weight, saturation_value_weight,
+                                         fft_streak_thresh, magnitude_thresh, blur_cutoff_ratio_denom);
 
 
     // Clean up

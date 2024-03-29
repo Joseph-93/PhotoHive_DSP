@@ -151,15 +151,17 @@ void normalize_array(Pixel* array, int length) {
 
 
 Full_Report_Data* compile_full_report(RGB_Statistics* rgb_stats,
-                                 Color_Palette* color_palette,
-                                 Blur_Profile_RGB* blur_profile,
-                                 Pixel average_saturation,
-                                 Pixel sharpness) {
+                                      Color_Palette* color_palette,
+                                      Blur_Profile_RGB* blur_profile,
+                                      Blur_Vector_RGB* blur_vectors_rgb,
+                                      Pixel average_saturation,
+                                      Pixel sharpness) {
     Full_Report_Data* full_report_data = (Full_Report_Data*)malloc(sizeof(Full_Report_Data));
 
     full_report_data->rgb_stats = rgb_stats;
     full_report_data->color_palette = color_palette;
     full_report_data->blur_profile = blur_profile;
+    full_report_data->blur_vectors = blur_vectors_rgb;
     full_report_data->average_saturation = average_saturation;
     full_report_data->sharpness = sharpness;
 

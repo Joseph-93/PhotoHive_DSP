@@ -2,6 +2,7 @@
 #include "blur_profile.h"
 #include "utilities.h"
 #include "fft_processing.h"
+#include "filtering.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -291,6 +292,136 @@ Blur_Profile_RGB* get_blur_profile(Image_RGB* image, int num_radius_bins, int nu
 }
 
 
+// Create an instance of Blur_Vector_RGB
+Blur_Vector_RGB* initialize_blur_vector_rgb(int len_vectors) {
+    Blur_Vector_RGB* blur_vectors_rgb = (Blur_Vector_RGB*)calloc(1, sizeof(Blur_Vector_RGB));
+    blur_vectors_rgb->blur_vectors_rgb = (Blur_Vector**)malloc(3*sizeof(Blur_Vector*));
+    for (int i=0; i<3; i++) {
+        blur_vectors_rgb->blur_vectors_rgb[i] = (Blur_Vector*)calloc(10, sizeof(Blur_Vector));
+    }
+    blur_vectors_rgb->len_vectors = len_vectors;
+    return blur_vectors_rgb;
+}
+
+
+// Free Blur_Vector_RGB object
+void free_blur_vectors_rgb(Blur_Vector_RGB* bv) {
+    for (int i=0; i<3; i++) {
+        free(bv->blur_vectors_rgb[i]);
+        bv->blur_vectors_rgb[i] = NULL;
+    }
+    bv->blur_vectors_rgb = NULL;
+    free(bv);
+}
+
+
+/******************************************************************************
+ * vectorize_blur_profile returns an array Blur_Vector structs, representing
+ *   the angle and magnitude of blur in an image.
+ *  -blur_profile contains the polar-form quantized FFT of an image
+ *  -error_thresh is the value that represents how much higher an FFT streak
+ *   must be in order to count as an effect of reasonable blurring
+ *  -mag_thresh is the magnitude threshold (in the range [0,1]) in the
+ *   Blur_Profile spectrum that marks what is considered the magnitude of blur.
+ *  -cutoff_ration_denom represents the proportion (1/cutoff) of the total
+ *   radius bins used to calculate the average that to vets possible maxima.
+******************************************************************************/
+Blur_Vector_RGB* vectorize_blur_profile(Blur_Profile_RGB* blur_profile,
+                                        Pixel error_thresh,
+                                        Pixel mag_thresh,
+                                        int cutoff_ratio_denom) {
+    Blur_Vector_RGB* bv = initialize_blur_vector_rgb(10);
+    Blur_Vector** blur_vectors = bv->blur_vectors_rgb;
+
+    // Store common values for easy use
+    int num_angle_bins = blur_profile->num_angle_bins;
+    int num_radius_bins = blur_profile->num_radius_bins;
+
+    for(int color=0; color < 3; color++) {
+        // Assign the current color of bins to use
+        Bin** bins;
+        switch (color) {
+            case 0:
+                bins = blur_profile->r_bins;
+                break;
+            case 1:
+                bins = blur_profile->g_bins;
+                break;
+            case 2:
+                bins = blur_profile->b_bins;
+                break;
+            default:
+                printf("Error: color was outside of [0,2]. color: %d", color);
+                return NULL;
+        }
+        Pixel* tot = (Pixel*)calloc(num_angle_bins, sizeof(Pixel));
+
+        // Get average of bins, and total of first half of the radii, per angle
+        Pixel avg = 0;
+        int radius_cutoff = num_radius_bins/cutoff_ratio_denom;
+        for (int i=0; i<num_angle_bins; i++) {
+            for (int j=0; j<radius_cutoff; j++) {
+                tot[i] += bins[i][j];
+            }
+            avg += tot[i];
+        }
+        avg /= num_angle_bins;
+
+        // Smooth the data to reduce noise
+        int smooth_size = 5;
+        Pixel* smoother = initialize_1d_smooth_filter(smooth_size);
+        Pixel* smooth = convolve_1d(tot, smoother, num_angle_bins, smooth_size);
+        
+        // Find maxima in the smoothed data
+        Blur_Vector maxima[10];
+        int maxima_idx = 0;
+        if (smooth[0] > smooth[num_angle_bins-1] && smooth[0] > smooth[1]) {
+            if (smooth[0] > avg * error_thresh && maxima_idx < 10) {
+                maxima[maxima_idx].angle = 0;
+                maxima[maxima_idx++].magnitude = tot[0];
+            }
+        }
+        for (int i=1; i<num_angle_bins-1; i++) {
+            if (smooth[i] > smooth[i-1] && smooth[i] > smooth[i+1]) {
+                if (smooth[i] > avg * error_thresh && maxima_idx < 10) {
+                    maxima[maxima_idx].angle = i;
+                    maxima[maxima_idx++].magnitude = tot[i]/radius_cutoff;
+                }
+            }
+        }
+        if (smooth[num_angle_bins-1] > smooth[num_angle_bins-2] && smooth[num_angle_bins-1] > smooth[0]) {
+            if (smooth[num_angle_bins-1] > avg * error_thresh && maxima_idx < 10) {
+                maxima[maxima_idx].angle = num_angle_bins-1;
+                maxima[maxima_idx++].magnitude = tot[num_angle_bins-1]/radius_cutoff;
+            }
+        }
+
+        // for max_angle in maxima:
+        for (int i=0; i<maxima_idx; i++) {
+            // Adjust angle_index to be within the valid range
+            int angle_idx = (maxima[i].angle + num_angle_bins/2) % num_angle_bins;
+            // Get the signal for the current angle
+            Pixel* cur_sig = bins[angle_idx];
+
+            // Find the index where the signal falls below the threshold
+            int cur_max_radius = num_radius_bins;
+            for (int j=0; j<num_radius_bins; j++) {
+                if (cur_sig[j] < mag_thresh) {
+                    cur_max_radius = j;
+                    break;
+                }
+            }
+
+            // Calculate and store relative magnitude and angle
+            blur_vectors[color][i].magnitude = ((float)cur_max_radius / (float)num_radius_bins);
+            blur_vectors[color][i].angle = (int)(180 * ((float)angle_idx / (float)num_angle_bins) - 90);
+        }
+        free(tot);
+    }
+    return bv;
+}
+
+
 /******************************************************************************
  * cartesian_to_polar_conversion creates a mapping for cartesian to polar conversion.
  *  -Built to dynamically compute for a given FFT height and width
@@ -354,4 +485,9 @@ void free_blur_profile_rgb(Blur_Profile_RGB* bp) {
     bp->b_bins = NULL;
     free(bp);
     bp = NULL;
+}
+
+
+void free_blur_vectors(Blur_Vector_RGB* bv) {
+    
 }

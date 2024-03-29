@@ -51,6 +51,23 @@ typedef struct Cartesian_To_Polar {
 } Cartesian_To_Polar;
 
 
+typedef struct Blur_Vector {
+    int angle;
+    float magnitude;
+} Blur_Vector;
+
+
+typedef struct Blur_Vector_RGB {
+    int len_vectors;
+    Blur_Vector** blur_vectors_rgb;
+} Blur_Vector_RGB;
+
+
+Blur_Vector_RGB* vectorize_blur_profile(Blur_Profile_RGB* blur_profile,
+                                     Pixel error_thresh,
+                                     Pixel mag_thresh,
+                                     int cutoff_ratio_denom);
+
 Blur_Profile_RGB* calculate_blur_profile(
                     const Cartesian_To_Polar* conversion, 
                     const Image_RGB* fft, 
@@ -71,5 +88,7 @@ void free_cartesian_to_polar(Cartesian_To_Polar* c2p);
 Blur_Profile_RGB* get_blur_profile(Image_RGB* image, int num_radius_bins, int num_angle_bins);
 
 void free_blur_profile_rgb(Blur_Profile_RGB* bp);
+
+void free_blur_vectors_rgb(Blur_Vector_RGB* bv);
 
 #endif

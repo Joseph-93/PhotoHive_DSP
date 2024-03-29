@@ -1,13 +1,11 @@
-import csv
-import io
 import ctypes
+from types import SimpleNamespace
 import json
 import sys
-from math import atan2, pi, sqrt, cos, sin, radians
+from math import cos, sin, radians
 from PIL import Image, ImageDraw, ImageFont
 import tkinter as tk
 from PIL import ImageTk
-from statistics import stdev
 import numpy as np
 import time
 from ctypes import POINTER, Structure, c_int, c_double
@@ -16,6 +14,21 @@ from ctypes import POINTER, Structure, c_int, c_double
 lib = ctypes.CDLL('./build/libreport_data.so')
 
 Pixel = ctypes.c_double
+
+import ctypes
+
+class Blur_Vector(ctypes.Structure):
+    _fields_ = [
+        ("angle", ctypes.c_int),
+        ("magnitude", ctypes.c_float),
+    ]
+
+class Blur_Vector_RGB(ctypes.Structure):
+    _fields_ = [
+        ("len_vectors", ctypes.c_int),
+        # Assuming blur_vectors_rgb is a pointer to a pointer of Blur_Vector
+        ("blur_vectors_rgb", ctypes.POINTER(ctypes.POINTER(Blur_Vector))),
+    ]
 
 class Pixel_HSV(Structure):
     _fields_ = [
@@ -97,6 +110,7 @@ class Full_Report_Data(ctypes.Structure):
         ("rgb_stats", ctypes.POINTER(RGB_Statistics)),
         ("color_palette", ctypes.POINTER(Color_Palette)),
         ("blur_profile", ctypes.POINTER(Blur_Profile_RGB)),
+        ("blur_vectors", ctypes.POINTER(Blur_Vector_RGB)),
         ("average_saturation", ctypes.c_double),
         ("sharpness", ctypes.c_double),
     ]
@@ -108,7 +122,9 @@ lib.get_full_report_data.argtypes = [ctypes.POINTER(Image_RGB),
                                      ctypes.c_double, ctypes.c_double,
                                      ctypes.c_double, ctypes.c_int,
                                      ctypes.c_int, ctypes.c_int, ctypes.c_int,
-                                     ctypes.c_float, ctypes.c_float]
+                                     ctypes.c_float, ctypes.c_float,
+                                     ctypes.c_double, ctypes.c_double, ctypes.c_int
+                                     ]
 lib.get_blur_profile_visual.restype = ctypes.POINTER(Image_RGB)
 lib.get_blur_profile_visual.argtypes = [ctypes.POINTER(Blur_Profile_RGB), ctypes.c_int, ctypes.c_int]
 
@@ -124,8 +140,33 @@ class Report:
         self.rgb_stats.width = width
         self.color_palette = self._convert_color_palette(report_data.color_palette)
         self.blur_profile = self._convert_blur_profile(report_data.blur_profile)
+        self.blur_vectors = self._convert_blur_vectors(report_data.blur_vectors)
         self.average_saturation = report_data.average_saturation
         self.sharpness = report_data.sharpness
+
+
+    def _convert_blur_vectors(self, blur_vector_pointer):
+        blur_vector_rgb = blur_vector_pointer.contents
+        blur_vector = SimpleNamespace()
+        blur_vector.r = []
+        blur_vector.g = []
+        blur_vector.b = []
+
+        if blur_vector_rgb.len_vectors > 0:
+            for color_index in range(3):  # Assuming the order is R, G, B
+                blur_vectors = blur_vector_rgb.blur_vectors_rgb[color_index]
+                for i in range(blur_vector_rgb.len_vectors):
+                    blur_vector_c = blur_vectors[i]
+                    vector = SimpleNamespace()
+                    vector.angle = blur_vector_c.angle
+                    vector.magnitude = blur_vector_c.magnitude
+                    if color_index == 0:
+                        blur_vector.r.append(vector)
+                    elif color_index == 1:
+                        blur_vector.g.append(vector)
+                    elif color_index == 2:
+                        blur_vector.b.append(vector)
+        return blur_vector
 
 
     def _convert_rgb_statistics(self, rgb_stats_ptr):
@@ -266,59 +307,6 @@ class Report:
         window.mainloop()
 
 
-    def vectorize_blur_profile(self):
-        blur_profile = self.blur_profile
-        # blur_profile.r[angle_bin][r_bin]
-        bins = blur_profile.r
-        angles = []
-        avg = 0
-        for angle_bin in bins:
-            tot = 0
-            for r_i in range(len(angle_bin)//2):
-                tot += angle_bin[r_i]
-            angles.append(tot)
-            avg += tot
-        avg /= (blur_profile.num_angle_bins)
-        # Find maxima of smoothed out image
-        maxima, lesser_maxima = find_relative_maxima(angles,avg, smooth_window=5)
-
-        transition_bands = []
-        for max_angle in maxima:
-            # Adjust angle_index to be within the valid range
-            angle_index = (max_angle[0] + blur_profile.num_angle_bins // 2) % blur_profile.num_angle_bins
-
-            # Get the signal for the current angle
-            cur_sig = blur_profile.r[angle_index]
-
-            # Calculate the average and standard deviation of the current signal
-            average = np.mean(cur_sig)
-            standard_deviation = np.std(cur_sig)
-
-            # Define a threshold for identifying the transition band
-            # threshold = average + standard_deviation * 0  # Adjust multiplier as needed
-            threshold = 0.3
-
-            # Find the index where the signal falls below the threshold
-            cur_max_i = len(cur_sig) - 1
-            for i, value in enumerate(cur_sig):
-                if value < threshold:
-                    cur_max_i = i
-                    break
-
-
-            # Store the angle index, radius index, and value at the transition band
-            transition_band = [angle_index, cur_max_i, cur_sig[cur_max_i]]
-            transition_bands.append(transition_band)
-        self.transition_bands = transition_bands
-        self.blur_vectors = []
-        for band in self.transition_bands:
-            angle_index, radius_index, _ = band
-            arrow_length = (radius_index / self.blur_profile.num_radius_bins)
-            arrow_angle = int(180 * (angle_index / self.blur_profile.num_angle_bins) - 90)
-            blur_vector = [arrow_angle, arrow_length]
-            self.blur_vectors.append(blur_vector)
-
-
     def display_all(self):
         """
             Creates a tkinter window, displaying all report statistics, the input image, and
@@ -349,21 +337,25 @@ class Report:
         canvas.create_image(0, 0, anchor='nw', image=image_photo)
 
         # Draw arrows representing blur vectors
-        for vector in self.blur_vectors:
-            arrow_angle = vector[0]
-            arrow_length = (vector[1] * image_photo.width())
+        length_scale_factor = min(image_photo.width()/2, image_photo.height()/2)
+        for vector in self.blur_vectors.r:
+            arrow_angle = vector.angle
+            arrow_length = (vector.magnitude * length_scale_factor)
             end_x = image_center_x + arrow_length * cos(radians(arrow_angle))
             end_y = image_center_y - arrow_length * sin(radians(arrow_angle))
-            canvas.create_line(image_center_x, image_center_y, end_x, end_y, arrow='last', fill='red', width=2)
-
-        # Draw arrows representing transition bands
-        # for band in self.transition_bands:
-        #     angle_index, radius_index, _ = band
-        #     arrow_length = (radius_index / self.blur_profile.num_radius_bins * image_photo.width())
-        #     arrow_angle = int(180 * (angle_index / self.blur_profile.num_angle_bins) - 90)
-        #     end_x = image_center_x + arrow_length * cos(radians(arrow_angle))
-        #     end_y = image_center_y - arrow_length * sin(radians(arrow_angle))
-        #     canvas.create_line(image_center_x, image_center_y, end_x, end_y, arrow='last', fill='red', width=2)
+            canvas.create_line(image_center_x, image_center_y, end_x, end_y, arrow='last', fill='red', width=9)
+        for vector in self.blur_vectors.r:
+            arrow_angle = vector.angle
+            arrow_length = (vector.magnitude * length_scale_factor)
+            end_x = image_center_x + arrow_length * cos(radians(arrow_angle))
+            end_y = image_center_y - arrow_length * sin(radians(arrow_angle))
+            canvas.create_line(image_center_x, image_center_y, end_x, end_y, arrow='last', fill='green', width=6)
+        for vector in self.blur_vectors.r:
+            arrow_angle = vector.angle
+            arrow_length = (vector.magnitude * length_scale_factor)
+            end_x = image_center_x + arrow_length * cos(radians(arrow_angle))
+            end_y = image_center_y - arrow_length * sin(radians(arrow_angle))
+            canvas.create_line(image_center_x, image_center_y, end_x, end_y, arrow='last', fill='blue', width=2)
 
         canvas.image = image_photo  # Keep a reference
 
@@ -407,10 +399,8 @@ class Report:
             'Blue Contrast': self.rgb_stats.Cb,
         }
         for i in range(max_vector_entries):
-            if i < len(self.blur_vectors):
-                angle, magnitude = self.blur_vectors[i]
-            else:
-                angle, magnitude = 0, 0
+            angle = self.blur_vectors.r[i].angle
+            magnitude = self.blur_vectors.r[i].magnitude
             report_data[f'Blur Vector {i+1} Angle'] = angle
             report_data[f'Blur Vector {i+1} Magnitude'] = magnitude
 
@@ -436,35 +426,13 @@ class Report:
         lib.free_full_report(ctypes.byref(self.data_ptr))
 
 
-def find_relative_maxima(data, avg, smooth_window=1):
-    # Smooth the data to reduce noise
-    smoothed_data = smooth_data(data, window_size=smooth_window)
-    ERROR_THRESH = 1.1
-    
-    # Find maxima in the smoothed data
-    maxima = []
-    lesser_maxima = []
-    for i in range(1, len(smoothed_data) - 1):
-        if smoothed_data[i] > smoothed_data[i - 1] and smoothed_data[i] > smoothed_data[i + 1]:
-            if smoothed_data[i] > avg * ERROR_THRESH:
-                maxima.append((i, data[i]))  # Use original data value for maxima
-            else:
-                lesser_maxima.append((i, data[i]))  # Use original data value for maxima
-    return maxima, lesser_maxima
-
-
-def smooth_data(data, window_size=3):
-    # Simple moving average for smoothing
-    return np.convolve(data, np.ones(window_size) / window_size, mode='same')
-
-
 def get_report(pil_image: Image,
                h_partitions=18, s_partitions=2, v_partitions=3,
                black_thresh=0.1, gray_thresh=0.1,
                coverage_thresh=0.95, linked_list_size=1000, downsample_rate=1,
                radius_partitions=40, angle_partitions=72,
                quantity_weight=0.1, saturation_value_weight=0.9,
-               return_blur_profile=False):
+               fft_streak_thresh=1.15, magnitude_thresh=0.3, blur_cutoff_ratio_denom=2):
     # Convert PIL image to Image_RGB
     width = pil_image.width
     height = pil_image.height
@@ -479,7 +447,8 @@ def get_report(pil_image: Image,
                                                coverage_thresh, linked_list_size, downsample_rate,
                                                radius_partitions, angle_partitions,
                                                quantity_weight, saturation_value_weight,
-                                               return_blur_profile
+                                               fft_streak_thresh, magnitude_thresh, 
+                                               blur_cutoff_ratio_denom
                                                )
     
     end_time = time.time()  # End timing
@@ -568,7 +537,7 @@ def run_demonstration():
     if len(sys.argv) > 1:
         image_name = sys.argv[1]
     else:
-        image_name = "9.png"
+        image_name = "12.png"
 
     # Open image
     image = Image.open(image_path+image_name)
@@ -578,9 +547,7 @@ def run_demonstration():
     report.image = image
 
     # Display images that represent image: blur profile and color palette
-    report.vectorize_blur_profile()
     report.generate_color_palette_image()
-    # Display full user interface
     report.display_all()
     json = report.to_json()
     print(json)
