@@ -202,6 +202,37 @@ void write_image_to_file(Image_RGB* image, const char* path) {
 
 
 /******************************************************************************
+ * crop_pgm returns an Image_PGM pointer, with only the indices encased by the
+ *   boundaries (right, left, bottom, top).
+ *  -Right and left are self-explanatory from the perspective of looking at the
+ *   image itself. Left should always be less than right.
+ *  -Top and bottom are self-explanatory from the perspective of looking at the
+ *   image itself. Top should always be less than bottom.
+ *  -No boundary indices may be negative. If any are, NULL will be returned.
+******************************************************************************/
+Image_PGM* crop_pgm(Image_PGM* image, int right, int left, int bottom, int top) {
+    // Check that boundaries are valid
+    if (right > image->width | left > image->width | bottom > image->height | top > image->height |
+        left < 0 | right < 0 | top < 0 | bottom < 0) {
+        fprintf(stderr, "Error: crop boundaries outside of image boundaries.");
+        return NULL;
+    }
+    // Calculate cropped image width and height, then create the image
+    int width = right - left;
+    int height = bottom - top;
+    Image_PGM* cropped_image = create_pgm_image(width, height);
+
+    // Copy the portion of the original to be kept, onto the cropped image
+    for (int x=0; x<width; x++) {
+        for (int y=0; y<height; y++) {
+            cropped_image->data[y*width + x] = image->data[(y+top)*image->width + x + left];
+        }
+    }
+    return cropped_image;
+}
+
+
+/******************************************************************************
  * crop_image returns an Image_RGB pointer, with only the indices encased by
  *   the boundaries (right, left, bottom, top).
  *  -Right and left are self-explanatory from the perspective of looking at the

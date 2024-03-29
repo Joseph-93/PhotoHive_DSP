@@ -148,27 +148,37 @@ Pixel get_variance(Pixel* input, int length, Pixel average) {
 }
 
 
-Pixel get_variance_sharpness(Pixel* input, int height, int width) {
+Sharpnesses* get_variance_sharpness(Image_PGM* image, Crop_Boundaries* bounds) {
+    if (bounds == NULL) {
+        return NULL;
+    }
     // run laplacian kernel filter through image
     Filter* filt = initialize_3x3_laplacian();
-    Pixel* filtered = filter_image(filt, input, height, width);
 
-    // get variance
-    int length = height*width;
-    START_TIMING(laplacian_avg_time);
-    Pixel avg = get_average(filtered, length);
-    END_TIMING(laplacian_avg_time, "getting average of laplacian");
+    Sharpnesses* sharpnesses = (Sharpnesses*)malloc(sizeof(Sharpnesses));
+    sharpnesses->N = bounds->N;
+    sharpnesses->sharpness = calloc(sharpnesses->N, sizeof(Pixel));
 
-    START_TIMING(variance_time);
-    Pixel variance = get_variance(filtered, length, avg);
-    END_TIMING(variance_time, "getting the variance of laplacian");
+    for (int i=0; i<bounds->N; i++) {
+        Image_PGM* cropped = crop_pgm(image, 
+                                      bounds->right[i], bounds->left[i], 
+                                      bounds->bottom[i], bounds->top[i]);
+        
+        Pixel* filtered = filter_image(filt, cropped->data, cropped->height, cropped->width);
 
+        // get variance
+        int length = cropped->height*cropped->width;
+        Pixel avg = get_average(filtered, length);
 
+        sharpnesses->sharpness[i] = get_variance(filtered, length, avg);
+
+        free(filtered);
+        free_image_pgm(cropped);
+    }
     // Clean up memory
-    free(filtered);
     free(filt->coefs);
     free(filt);
-    return variance;
+    return sharpnesses;
 }
 
 

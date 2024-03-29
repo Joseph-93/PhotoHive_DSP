@@ -17,7 +17,7 @@
 #include "utilities.h"
 
 
-Full_Report_Data* get_full_report_data(Image_RGB* image,
+Full_Report_Data* get_full_report_data(Image_RGB* image, Crop_Boundaries* crop_boundaries,
                   int h_partitions, int s_partitions, int v_partitions,
                   double black_thresh, double gray_thresh,
                   double coverage_thresh, int linked_list_size,
@@ -66,7 +66,7 @@ Full_Report_Data* get_full_report_data(Image_RGB* image,
 
     // get the variance sharpness measurement
     START_TIMING(sharpness_time);
-    Pixel variance_sharpness = get_variance_sharpness(pgm->data, pgm->height, pgm->width);
+    Sharpnesses* variance_sharpness = get_variance_sharpness(pgm, crop_boundaries);
     END_TIMING(sharpness_time, "sharpness");
 
     // Get blur profile
@@ -93,6 +93,10 @@ void free_full_report(Full_Report_Data** report) {
     free_color_palette((*report)->color_palette); (*report)->color_palette = NULL;
     free_blur_profile_rgb((*report)->blur_profile); (*report)->blur_profile = NULL;
     free_blur_vectors_rgb((*report)->blur_vectors); (*report)->blur_vectors = NULL;
+    if ((*report)->sharpness != NULL) {
+        free((*report)->sharpness->sharpness); (*report)->sharpness->sharpness = NULL;
+        free((*report)->sharpness); (*report)->sharpness = NULL;
+    }
     free((*report)->rgb_stats);
     
     free((*report)); *report = NULL;

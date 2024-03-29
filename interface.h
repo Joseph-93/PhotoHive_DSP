@@ -13,7 +13,7 @@
 #define NUM_ANGLE_BINS 18
 
 
-Full_Report_Data* get_full_report_data(Image_RGB* image,
+Full_Report_Data* get_full_report_data(Image_RGB* image, Crop_Boundaries* salient_characters,
                   int h_partitions, int s_partitions, int v_partitions,
                   double black_thresh, double gray_thresh,
                   double coverage_thresh, int linked_list_size,

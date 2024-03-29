@@ -80,6 +80,24 @@ typedef struct RGB_Statistics {
 } RGB_Statistics;
 
 
+/******************************************************************************
+ * Crop_Boundaries simply holds the integer values for the top, bottom, left,
+ *   and right boundaries for image crops.
+ *  -N is the number of crops
+ *  -top is a pointer to all N top boundaries
+ *  -bottom is a pointer to all N bottom boundaries
+ *  -left is a pointer to all N left boundaries
+ *  -right is a pointer to all N right boundaries
+******************************************************************************/
+typedef struct Crop_Boundaries {
+    int N;
+    int* top;
+    int* bottom;
+    int* left;
+    int* right;
+} Crop_Boundaries;
+
+
 Image_RGB* create_rgb_image(int width, int height);
 
 Image_HSV* create_hsv_image(int width, int height);
@@ -89,6 +107,8 @@ Image_PGM* create_pgm_image(int width, int height);
 Image_RGB* read_image(const char* filepath);
 
 void write_image_to_file(Image_RGB* image, const char* path);
+
+Image_PGM* crop_pgm(Image_PGM* image, int right, int left, int bottom, int top);
 
 Image_RGB* crop_image(Image_RGB* image, int right, int left, int bottom, int top);
 

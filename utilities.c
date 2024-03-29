@@ -6,6 +6,7 @@
 #include "utilities.h"
 #include "image_processing.h"
 #include "color_quantization.h"
+#include "filtering.h"
 
 
 int num_cores;
@@ -155,7 +156,7 @@ Full_Report_Data* compile_full_report(RGB_Statistics* rgb_stats,
                                       Blur_Profile_RGB* blur_profile,
                                       Blur_Vector_RGB* blur_vectors_rgb,
                                       Pixel average_saturation,
-                                      Pixel sharpness) {
+                                      Sharpnesses* sharpness) {
     Full_Report_Data* full_report_data = (Full_Report_Data*)malloc(sizeof(Full_Report_Data));
 
     full_report_data->rgb_stats = rgb_stats;

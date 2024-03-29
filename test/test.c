@@ -30,9 +30,32 @@ int main() {
     double fft_streak_thresh=1.1;
     double magnitude_thresh=0.3;
     int blur_cutoff_ratio_denom=2;
+    // Crop_Boundaries* crop_boundaries=NULL;
+
+    Crop_Boundaries* crop_boundaries = (Crop_Boundaries*)malloc(sizeof(Crop_Boundaries));
+    crop_boundaries->N      = 3;
+    crop_boundaries->left   = (Pixel*)malloc(3 * sizeof(Pixel));
+    crop_boundaries->right  = (Pixel*)malloc(3 * sizeof(Pixel));
+    crop_boundaries->top    = (Pixel*)malloc(3 * sizeof(Pixel));
+    crop_boundaries->bottom = (Pixel*)malloc(3 * sizeof(Pixel));
+
+    crop_boundaries->left[0]   =  61;
+    crop_boundaries->right[0]  = 383;
+    crop_boundaries->top[0]    = 212;
+    crop_boundaries->bottom[0] = 897;
+
+    crop_boundaries->left[1]   = 363;
+    crop_boundaries->right[1]  = 591;
+    crop_boundaries->top[1]    = 130;
+    crop_boundaries->bottom[1] = 805;
+
+    crop_boundaries->left[2]   = 467;
+    crop_boundaries->right[2]  = 944;
+    crop_boundaries->top[2]    =  94;
+    crop_boundaries->bottom[2] = 996;
 
     // Arm full report
-    Full_Report_Data* full_report_data = get_full_report_data(image,
+    Full_Report_Data* full_report_data = get_full_report_data(image, crop_boundaries,
                                          h_partitions, s_partitions, v_partitions, 
                                          black_thresh, gray_thresh, coverage_thresh, 
                                          linked_list_size, downsample_rate, 

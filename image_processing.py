@@ -17,6 +17,12 @@ Pixel = ctypes.c_double
 
 import ctypes
 
+class Sharpnesses(ctypes.Structure):
+    _fields_ = [
+        ("N", ctypes.c_int),
+        ("sharpness", ctypes.POINTER(Pixel))
+    ]
+
 class Blur_Vector(ctypes.Structure):
     _fields_ = [
         ("angle", ctypes.c_int),
@@ -67,6 +73,15 @@ class RGB_Statistics(ctypes.Structure):
         ("Cb", ctypes.c_double),
     ]
 
+class Crop_Boundaries(ctypes.Structure):
+    _fields_ = [
+        ("N", ctypes.c_int),
+        ("top", ctypes.POINTER(ctypes.c_int)),
+        ("bottom", ctypes.POINTER(ctypes.c_int)),
+        ("left", ctypes.POINTER(ctypes.c_int)),
+        ("right", ctypes.POINTER(ctypes.c_int)),
+    ]
+
 class Blur_Profile_RGB(ctypes.Structure):
     _fields_ = [
         ("num_angle_bins", ctypes.c_int),
@@ -112,12 +127,12 @@ class Full_Report_Data(ctypes.Structure):
         ("blur_profile", ctypes.POINTER(Blur_Profile_RGB)),
         ("blur_vectors", ctypes.POINTER(Blur_Vector_RGB)),
         ("average_saturation", ctypes.c_double),
-        ("sharpness", ctypes.c_double),
+        ("sharpness", ctypes.POINTER(Sharpnesses)),
     ]
 
 
 lib.get_full_report_data.restype = ctypes.POINTER(Full_Report_Data)
-lib.get_full_report_data.argtypes = [ctypes.POINTER(Image_RGB), 
+lib.get_full_report_data.argtypes = [ctypes.POINTER(Image_RGB), ctypes.POINTER(Crop_Boundaries),
                                      ctypes.c_int, ctypes.c_int, ctypes.c_int,
                                      ctypes.c_double, ctypes.c_double,
                                      ctypes.c_double, ctypes.c_int,
@@ -130,8 +145,6 @@ lib.get_blur_profile_visual.argtypes = [ctypes.POINTER(Blur_Profile_RGB), ctypes
 
 class Report:
     def __init__(self, report_ptr, height, width):
-        # Use contents to get the actual data if report_ptr is a pointer
-        # Use the [] operator if report_ptr is an array of structures
         report_data = report_ptr.contents
         self.data_ptr = report_ptr
 
@@ -142,7 +155,24 @@ class Report:
         self.blur_profile = self._convert_blur_profile(report_data.blur_profile)
         self.blur_vectors = self._convert_blur_vectors(report_data.blur_vectors)
         self.average_saturation = report_data.average_saturation
-        self.sharpness = report_data.sharpness
+        self.sharpnesses = self._convert_sharpnesses(report_data.sharpness)
+
+
+    def _convert_sharpnesses(self, sharpnesses_ptr):
+        # Ensure the pointer is valid
+        if not sharpnesses_ptr:
+            return []
+
+        # Dereference the pointer to get the Sharpnesses structure
+        c_sharpnesses = sharpnesses_ptr.contents
+
+        # Get the number of sharpness values
+        n = c_sharpnesses.N
+
+        # Extract sharpness array into a Python list
+        sharpnesses = [c_sharpnesses.sharpness[i] for i in range(n)]
+
+        return sharpnesses
 
 
     def _convert_blur_vectors(self, blur_vector_pointer):
@@ -312,9 +342,10 @@ class Report:
             Creates a tkinter window, displaying all report statistics, the input image, and
                 a visual color palette.
             REQUIRED:
-                -self.image must be manually set to the input image by the programmer
+                -self.image must be manually set to the input image by the programmer.
                 -self.generate_color_palette_image() MUST be called prior to self.display_all().
-                -
+                -self.bounding_boxes must be manually set IF the programmer wishes to see 
+                    the sharpness of bounding boxes in the display window.
         """
         window = tk.Tk()
         window.title("Image Analysis Report")
@@ -357,6 +388,31 @@ class Report:
             end_y = image_center_y - arrow_length * sin(radians(arrow_angle))
             canvas.create_line(image_center_x, image_center_y, end_x, end_y, arrow='last', fill='blue', width=2)
 
+        # Add bounding box lines and sharpness text
+        if "bounding_boxes" in dir(self):
+            for i in range(self.bounding_boxes.N):
+                x0 = int(self.bounding_boxes.left[i] * scale_factor)
+                y0 = int(self.bounding_boxes.top[i] * scale_factor)
+                x1 = int(self.bounding_boxes.right[i] * scale_factor)
+                y1 = int(self.bounding_boxes.bottom[i] * scale_factor)
+
+                # Draw bounding box lines
+                canvas.create_line(x0, y0, x1, y0, fill='red', width=2)  # Top line
+                canvas.create_line(x0, y1, x1, y1, fill='red', width=2)  # Bottom line
+                canvas.create_line(x0, y0, x0, y1, fill='red', width=2)  # Left line
+                canvas.create_line(x1, y0, x1, y1, fill='red', width=2)  # Right line
+
+                # Calculate the position for the text
+                text_x = (x0 + x1) / 2
+                text_y = y0 - 10  # Adjust this value to position the text slightly above the top line
+
+                # Add text showing the sharpness
+                sharpness = self.sharpnesses[i]
+                scale = 10**4
+                scaled_value = round(sharpness * scale)
+                sharpness_value = f"Sharpness: {scaled_value / scale:.4f}"
+                canvas.create_text(text_x, text_y, text=sharpness_value, fill='red', anchor="s")
+
         canvas.image = image_photo  # Keep a reference
 
         # Display RGB stats, average saturation, and sharpness
@@ -367,7 +423,6 @@ class Report:
         stats_text += f"Green Contrast: {self.rgb_stats.Cg}\n"
         stats_text += f"Blue Contrast: {self.rgb_stats.Cb}\n"
         stats_text += f"Saturation: {self.average_saturation}\n"
-        stats_text += f"Sharpness: {self.sharpness}\n"
         stats_label = tk.Label(window, text=stats_text, justify=tk.LEFT)
         stats_label.pack(side='top', padx=10)
 
@@ -384,13 +439,13 @@ class Report:
         # Define the maximum number of color entries
         max_color_entries = 100
         max_vector_entries = 10
+        max_sharpnesses = 10
 
         # Start with basic statistics and blur profile data
         report_data = {
             'Height': self.rgb_stats.height,
             'Width': self.rgb_stats.width,
             'Average Saturation': self.average_saturation,
-            'Sharpness': self.sharpness,
             'Red Brightness': self.rgb_stats.Br,
             'Green Brightness': self.rgb_stats.Bg,
             'Blue Brightness': self.rgb_stats.Bb,
@@ -418,6 +473,14 @@ class Report:
             report_data[f'Color {i+1} V'] = v
             report_data[f'Color {i+1} Percentage'] = percentage
 
+        # Add sharpnesses list, padding with zeros if necessary
+        for i in range(max_sharpnesses):
+            if i < len(self.sharpnesses):
+                sharpness = self.sharpnesses[i]
+            else:
+                sharpness = 0.0
+            report_data[f'Sharpness {i+1}:'] = sharpness
+
         # Convert the report data to a JSON string
         json_data = json.dumps(report_data, indent=4)
         return json_data
@@ -426,7 +489,36 @@ class Report:
         lib.free_full_report(ctypes.byref(self.data_ptr))
 
 
-def get_report(pil_image: Image,
+def set_bounding_boxes(bounding_boxes):
+    """
+    bounding_boxes should be a list of tuples or a list of dictionaries,
+    where each tuple or dictionary represents one bounding box
+    with 'top', 'bottom', 'left', 'right' values.
+    """
+    n = len(bounding_boxes)
+    top_array = (ctypes.c_int * n)()
+    bottom_array = (ctypes.c_int * n)()
+    left_array = (ctypes.c_int * n)()
+    right_array = (ctypes.c_int * n)()
+
+    for i, bbox in enumerate(bounding_boxes):
+        top_array[i] = bbox['top']
+        bottom_array[i] = bbox['bottom']
+        left_array[i] = bbox['left']
+        right_array[i] = bbox['right']
+
+    crop_boundaries = Crop_Boundaries(
+        N=n,
+        top=top_array,
+        bottom=bottom_array,
+        left=left_array,
+        right=right_array
+    )
+
+    return crop_boundaries
+
+
+def get_report(pil_image: Image, salient_characters=ctypes.POINTER(Crop_Boundaries)(),
                h_partitions=18, s_partitions=2, v_partitions=3,
                black_thresh=0.1, gray_thresh=0.1,
                coverage_thresh=0.95, linked_list_size=1000, downsample_rate=1,
@@ -436,12 +528,13 @@ def get_report(pil_image: Image,
     # Convert PIL image to Image_RGB
     width = pil_image.width
     height = pil_image.height
+    crop_boundaries = salient_characters
     image_rgb = pil_image_to_image_rgb(pil_image)
 
     image_ctype = ctypes.byref(image_rgb)
     start_time = time.time()  # Start timing
 
-    report_data_ptr = lib.get_full_report_data(image_ctype, 
+    report_data_ptr = lib.get_full_report_data(image_ctype, crop_boundaries,
                                                h_partitions, s_partitions, v_partitions,
                                                black_thresh, gray_thresh,
                                                coverage_thresh, linked_list_size, downsample_rate,
@@ -537,17 +630,40 @@ def run_demonstration():
     if len(sys.argv) > 1:
         image_name = sys.argv[1]
     else:
-        image_name = "12.png"
+        image_name = "10.png"
 
     # Open image
     image = Image.open(image_path+image_name)
 
+    bounds = [
+        {
+            "left": 61,
+            "right": 383,
+            "top": 212,
+            "bottom": 897,
+        },
+        {
+            "left": 363,
+            "right": 591,
+            "top": 130,
+            "bottom": 805,
+        },
+        {
+            "left": 467,
+            "right": 944,
+            "top": 94,
+            "bottom": 996,
+        },
+    ]
+    bounding_boxes = set_bounding_boxes(bounds)
+
     # Set up report variables, and Generate report
-    report = get_report(image)
+    report = get_report(image, salient_characters=bounding_boxes)
     report.image = image
 
     # Display images that represent image: blur profile and color palette
     report.generate_color_palette_image()
+    report.bounding_boxes = bounding_boxes
     report.display_all()
     json = report.to_json()
     print(json)

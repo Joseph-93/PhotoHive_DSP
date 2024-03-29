@@ -10,6 +10,7 @@ typedef struct Filter {
     double* coefs;
 } Filter;
 
+
 Pixel* convolve_1d(Pixel* x, Pixel* h, int x_len, int y_len);
 
 Pixel* initialize_1d_smooth_filter(int size);
@@ -26,7 +27,7 @@ double sharpness_avg(double* input, int length);
 
 Image_RGB* create_filtered_RGB(Image_RGB* input, Filter* filt);
 
-Pixel get_variance_sharpness(Pixel* input, int height, int width);
+Sharpnesses* get_variance_sharpness(Image_PGM* image, Crop_Boundaries* bounds);
 
 Pixel get_average_sharpness(Pixel* input, int height, int width);
 

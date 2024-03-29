@@ -19,13 +19,18 @@
 
 extern int num_cores;
 
+typedef struct Sharpnesses {
+    int N;
+    Pixel* sharpness;
+} Sharpnesses;
+
 typedef struct Full_Report_Data {
     RGB_Statistics* rgb_stats;
     Color_Palette* color_palette;
     Blur_Profile_RGB* blur_profile;
     Blur_Vector_RGB* blur_vectors;
     Pixel average_saturation;
-    Pixel sharpness;
+    Sharpnesses* sharpness;
 } Full_Report_Data;
 
 int newton_int_sqrt(double val);
@@ -44,14 +49,12 @@ void free_2d_array(void** arr, int len);
 
 void normalize_array(Pixel* array, int length);
 
-Pixel get_variance_sharpness(Pixel* input, int height, int width);
-
 Full_Report_Data* compile_full_report(RGB_Statistics* rgb_stats,
                                       Color_Palette* color_palette,
                                       Blur_Profile_RGB* blur_profile,
                                       Blur_Vector_RGB* blur_vectors_rgb,
                                       Pixel average_saturation,
-                                      Pixel sharpness);
+                                      Sharpnesses* sharpness);
 
 void print_full_report(Full_Report_Data* data);
 
