@@ -267,6 +267,18 @@ Image_RGB* crop_image(Image_RGB* image, int right, int left, int bottom, int top
 
 
 /******************************************************************************
+ * free_crop_boundaries frees a Crop_Boundaries object given its pointer.
+******************************************************************************/
+void free_crop_boundaries(Crop_Boundaries* cb) {
+    free(cb->top); cb->top = NULL;
+    free(cb->bottom); cb->bottom = NULL;
+    free(cb->left); cb->left = NULL;
+    free(cb->right); cb->right = NULL;
+    free(cb); cb = NULL;
+}
+
+
+/******************************************************************************
  * free_image_rgb frees all memory taken by an Image_RGB* and the image itself.
  *  -In the end it nullifies image as well, so there is no need for image=NULL.
 ******************************************************************************/
@@ -465,7 +477,7 @@ Image_RGB* hsv2rgb(Image_HSV* hsv) {
  * @param y The y-coordinate to validate.
  * @param errors Pointer to an integer that tracks the total number of errors.
 ******************************************************************************/
-void validate_coordinates(Image_RGB* array, int x, int y, int* errors) {
+void validate_coordinates(Image_PGM* array, int x, int y, int* errors) {
     if (x>=array->width) {
         *errors +=1;
         fprintf(stderr, "ERROR %3d: x is above the array width: x=%3d, width=%3d.\n", *errors, x, array->width);

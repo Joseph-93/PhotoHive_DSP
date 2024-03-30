@@ -17,13 +17,11 @@ typedef double Bin;
  *  -Bin* r, g, and b bins are 2D logically (angle by radius), but are
  *   literally 1D. Properly indexed as {color}_bins[angle*num_angle_bins + rad]
 ******************************************************************************/
-typedef struct Blur_Profile_RGB {
+typedef struct Blur_Profile {
     int num_angle_bins, num_radius_bins;
     int angle_bin_size, radius_bin_size;
-    Bin** r_bins; // bins should be referenced as [angle][radius]
-    Bin** g_bins; // bins should be referenced as [angle][radius]
-    Bin** b_bins; // bins should be referenced as [angle][radius]
-} Blur_Profile_RGB;     // Holds blur profile of bins for R,G,B
+    Bin** bins; // bins should be referenced as [angle][radius]
+} Blur_Profile;   // Holds blur profile of bins for R,G,B
 
 
 /******************************************************************************
@@ -57,38 +55,41 @@ typedef struct Blur_Vector {
 } Blur_Vector;
 
 
-typedef struct Blur_Vector_RGB {
+typedef struct Blur_Vector_Group {
     int len_vectors;
-    Blur_Vector** blur_vectors_rgb;
-} Blur_Vector_RGB;
+    Blur_Vector* blur_vectors;
+} Blur_Vector_Group;
 
 
-Blur_Vector_RGB* vectorize_blur_profile(Blur_Profile_RGB* blur_profile,
+Blur_Vector_Group* initialize_blur_vector_group(int len_vectors);
+
+
+Blur_Vector_Group* vectorize_blur_profile(Blur_Profile* blur_profile,
                                      Pixel error_thresh,
                                      Pixel mag_thresh,
                                      int cutoff_ratio_denom);
 
-Blur_Profile_RGB* calculate_blur_profile(
+Blur_Profile* calculate_blur_profile(
                     const Cartesian_To_Polar* conversion, 
-                    const Image_RGB* fft, 
+                    const Image_PGM* fft, 
                     int num_radius_bins, 
                     int num_angle_bins);
 
-Image_RGB* get_blur_profile_visual(Blur_Profile_RGB* blur_profile, 
+Image_PGM* get_blur_profile_visual(Blur_Profile* blur_profile, 
                                    int height, int width);
 
 void view_2d_array_contents(Bin** array, int height, int width);
 
-void blur_profile_tests(Image_RGB* fft);
+void blur_profile_tests(Image_PGM* fft);
 
 Cartesian_To_Polar* cartesian_to_polar_conversion(unsigned int width, unsigned int height);
 
 void free_cartesian_to_polar(Cartesian_To_Polar* c2p);
 
-Blur_Profile_RGB* get_blur_profile(Image_RGB* image, int num_radius_bins, int num_angle_bins);
+Blur_Profile* get_blur_profile(Image_PGM* pgm, int num_radius_bins, int num_angle_bins);
 
-void free_blur_profile_rgb(Blur_Profile_RGB* bp);
+void free_blur_profile(Blur_Profile* bp);
 
-void free_blur_vectors_rgb(Blur_Vector_RGB* bv);
+void free_blur_vector_group(Blur_Vector_Group* bv);
 
 #endif

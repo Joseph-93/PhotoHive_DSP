@@ -153,8 +153,8 @@ void normalize_array(Pixel* array, int length) {
 
 Full_Report_Data* compile_full_report(RGB_Statistics* rgb_stats,
                                       Color_Palette* color_palette,
-                                      Blur_Profile_RGB* blur_profile,
-                                      Blur_Vector_RGB* blur_vectors_rgb,
+                                      Blur_Profile* blur_profile,
+                                      Blur_Vector_Group* blur_vectors,
                                       Pixel average_saturation,
                                       Sharpnesses* sharpness) {
     Full_Report_Data* full_report_data = (Full_Report_Data*)malloc(sizeof(Full_Report_Data));
@@ -162,7 +162,7 @@ Full_Report_Data* compile_full_report(RGB_Statistics* rgb_stats,
     full_report_data->rgb_stats = rgb_stats;
     full_report_data->color_palette = color_palette;
     full_report_data->blur_profile = blur_profile;
-    full_report_data->blur_vectors = blur_vectors_rgb;
+    full_report_data->blur_vectors = blur_vectors;
     full_report_data->average_saturation = average_saturation;
     full_report_data->sharpness = sharpness;
 
@@ -175,7 +175,6 @@ void print_full_report(Full_Report_Data* data) {
     FILE* f = fopen(path, "w");
     free(path); path = NULL;
     fprintf(f, "FULL REPORT:\n");
-    fprintf(f, "Variance-based Sharpness: %lf\n", data->sharpness);
     fprintf(f, "Average Saturation: %lf\n", data->average_saturation);
     fprintf(f, "Brightness of RGB: (%lf,%lf,%lf)\n", data->rgb_stats->Br, data->rgb_stats->Bg, data->rgb_stats->Bb);
     fprintf(f, "Contrast of RGB; (%lf,%lf,%lf)\n", data->rgb_stats->Cr, data->rgb_stats->Cg, data->rgb_stats->Cb);
@@ -188,13 +187,13 @@ void print_full_report(Full_Report_Data* data) {
     }
 
     fprintf(f, "\nBlur Profile:\n");
-    Blur_Profile_RGB* bp = data->blur_profile;
+    Blur_Profile* bp = data->blur_profile;
     for(int i=0; i<bp->num_angle_bins; i++) {
         for (int j=0; j<bp->num_radius_bins; j++) {
             float norm_freq = ((float)j)/((float)bp->num_radius_bins);
             int angle = bp->angle_bin_size * i;
-            fprintf(f, "angle: %3d, frequency: %.3f\t\t RGB Bins: (%lf,%lf,%lf)\n", 
-                    angle, norm_freq, bp->r_bins[i][j], bp->g_bins[i][j], bp->b_bins[i][j]);
+            fprintf(f, "angle: %3d, frequency: %.3f\t\t Bin: %lf\n", 
+                    angle, norm_freq, bp->bins[i][j]);
         }
     }
     fprintf(f, "\n\nEND OF REPORT.\n");

@@ -29,11 +29,11 @@ class Blur_Vector(ctypes.Structure):
         ("magnitude", ctypes.c_float),
     ]
 
-class Blur_Vector_RGB(ctypes.Structure):
+class Blur_Vector_Group(ctypes.Structure):
     _fields_ = [
         ("len_vectors", ctypes.c_int),
         # Assuming blur_vectors_rgb is a pointer to a pointer of Blur_Vector
-        ("blur_vectors_rgb", ctypes.POINTER(ctypes.POINTER(Blur_Vector))),
+        ("blur_vectors", ctypes.POINTER(Blur_Vector)),
     ]
 
 class Pixel_HSV(Structure):
@@ -82,50 +82,30 @@ class Crop_Boundaries(ctypes.Structure):
         ("right", ctypes.POINTER(ctypes.c_int)),
     ]
 
-class Blur_Profile_RGB(ctypes.Structure):
+class Blur_Profile(ctypes.Structure):
     _fields_ = [
         ("num_angle_bins", ctypes.c_int),
         ("num_radius_bins", ctypes.c_int),
         ("angle_bin_size", ctypes.c_int),
         ("radius_bin_size", ctypes.c_int),
-        ("r_bins", ctypes.POINTER(ctypes.POINTER(ctypes.c_double))),
-        ("g_bins", ctypes.POINTER(ctypes.POINTER(ctypes.c_double))),
-        ("b_bins", ctypes.POINTER(ctypes.POINTER(ctypes.c_double))),
+        ("bins", ctypes.POINTER(ctypes.POINTER(ctypes.c_double))),
     ]
 
     def get_bin_values(self):
-        angle_bins_r = []
-        angle_bins_g = []
-        angle_bins_b = []
-
+        angle_bins = []
         for i in range(self.num_angle_bins):
-            # Red channel
-            radius_array_r = self.r_bins[i]
-            angle_bin_r = [radius_array_r[j] for j in range(self.num_radius_bins)]
-            angle_bins_r.append(angle_bin_r)
-
-            # Green channel
-            radius_array_g = self.g_bins[i]
-            angle_bin_g = [radius_array_g[j] for j in range(self.num_radius_bins)]
-            angle_bins_g.append(angle_bin_g)
-
-            # Blue channel
-            radius_array_b = self.b_bins[i]
-            angle_bin_b = [radius_array_b[j] for j in range(self.num_radius_bins)]
-            angle_bins_b.append(angle_bin_b)
-        
-        return {
-            "r_bins": angle_bins_r,
-            "g_bins": angle_bins_g,
-            "b_bins": angle_bins_b
-        }
+            radius_array = self.bins[i]
+            angle_bin = [radius_array[j] for j in range(self.num_radius_bins)]
+            angle_bins.append(angle_bin)
+        return angle_bins
+    
     
 class Full_Report_Data(ctypes.Structure):
     _fields_ = [
         ("rgb_stats", ctypes.POINTER(RGB_Statistics)),
         ("color_palette", ctypes.POINTER(Color_Palette)),
-        ("blur_profile", ctypes.POINTER(Blur_Profile_RGB)),
-        ("blur_vectors", ctypes.POINTER(Blur_Vector_RGB)),
+        ("blur_profile", ctypes.POINTER(Blur_Profile)),
+        ("blur_vectors", ctypes.POINTER(Blur_Vector_Group)),
         ("average_saturation", ctypes.c_double),
         ("sharpness", ctypes.POINTER(Sharpnesses)),
     ]
@@ -141,7 +121,7 @@ lib.get_full_report_data.argtypes = [ctypes.POINTER(Image_RGB), ctypes.POINTER(C
                                      ctypes.c_double, ctypes.c_double, ctypes.c_int
                                      ]
 lib.get_blur_profile_visual.restype = ctypes.POINTER(Image_RGB)
-lib.get_blur_profile_visual.argtypes = [ctypes.POINTER(Blur_Profile_RGB), ctypes.c_int, ctypes.c_int]
+lib.get_blur_profile_visual.argtypes = [ctypes.POINTER(Blur_Profile), ctypes.c_int, ctypes.c_int]
 
 class Report:
     def __init__(self, report_ptr, height, width):
@@ -176,27 +156,18 @@ class Report:
 
 
     def _convert_blur_vectors(self, blur_vector_pointer):
-        blur_vector_rgb = blur_vector_pointer.contents
-        blur_vector = SimpleNamespace()
-        blur_vector.r = []
-        blur_vector.g = []
-        blur_vector.b = []
+        c_blur_vector_group = blur_vector_pointer.contents
+        blur_vectors = []
 
-        if blur_vector_rgb.len_vectors > 0:
-            for color_index in range(3):  # Assuming the order is R, G, B
-                blur_vectors = blur_vector_rgb.blur_vectors_rgb[color_index]
-                for i in range(blur_vector_rgb.len_vectors):
-                    blur_vector_c = blur_vectors[i]
+        if c_blur_vector_group.len_vectors > 0:
+                c_blur_vectors = c_blur_vector_group.blur_vectors
+                for i in range(c_blur_vector_group.len_vectors):
+                    c_blur_vector = c_blur_vectors[i]
                     vector = SimpleNamespace()
-                    vector.angle = blur_vector_c.angle
-                    vector.magnitude = blur_vector_c.magnitude
-                    if color_index == 0:
-                        blur_vector.r.append(vector)
-                    elif color_index == 1:
-                        blur_vector.g.append(vector)
-                    elif color_index == 2:
-                        blur_vector.b.append(vector)
-        return blur_vector
+                    vector.angle = c_blur_vector.angle
+                    vector.magnitude = c_blur_vector.magnitude
+                    blur_vectors.append(vector)
+        return blur_vectors
 
 
     def _convert_rgb_statistics(self, rgb_stats_ptr):
@@ -223,9 +194,10 @@ class Report:
     
 
     def _convert_blur_profile(self, blur_profile_ptr):
-        blur_profile = blur_profile_ptr.contents
-        num_angle_bins = blur_profile.num_angle_bins
-        num_radius_bins = blur_profile.num_radius_bins
+        c_blur_profile = blur_profile_ptr.contents
+        num_angle_bins = c_blur_profile.num_angle_bins
+        num_radius_bins = c_blur_profile.num_radius_bins
+        blur_profile = SimpleNamespace()
 
         def _2d_array_from_pointer(ptr, rows, cols):
             array_2d = []
@@ -234,21 +206,17 @@ class Report:
                 array_2d.append(list(row_ptr))
             return array_2d
 
-        r_bins = _2d_array_from_pointer(blur_profile.r_bins, num_angle_bins, num_radius_bins)
-        g_bins = _2d_array_from_pointer(blur_profile.g_bins, num_angle_bins, num_radius_bins)
-        b_bins = _2d_array_from_pointer(blur_profile.b_bins, num_angle_bins, num_radius_bins)
+        bins = _2d_array_from_pointer(c_blur_profile.bins, num_angle_bins, num_radius_bins)
 
-        def check_and_correct_nan(bins, color):
+        def check_and_correct_nan(bins):
             for angle_index, row in enumerate(bins):
                 for radius_index, val in enumerate(row):
                     if np.isnan(val):
-                        print(f"NaN found in {color} bins at angle {angle_index}, radius {radius_index}. Correcting to 0.")
+                        print(f"NaN found at angle {angle_index}, radius {radius_index}. Correcting to 0.")
                         bins[angle_index][radius_index] = 0.0  # Correct NaN to 0
             return bins
 
-        blur_profile.r = check_and_correct_nan(r_bins, 'R')
-        blur_profile.g = check_and_correct_nan(g_bins, 'G')
-        blur_profile.b = check_and_correct_nan(b_bins, 'B')
+        blur_profile.bins = check_and_correct_nan(bins)
 
         return blur_profile
     
@@ -369,24 +337,12 @@ class Report:
 
         # Draw arrows representing blur vectors
         length_scale_factor = min(image_photo.width()/2, image_photo.height()/2)
-        for vector in self.blur_vectors.r:
+        for vector in self.blur_vectors:
             arrow_angle = vector.angle
             arrow_length = (vector.magnitude * length_scale_factor)
             end_x = image_center_x + arrow_length * cos(radians(arrow_angle))
             end_y = image_center_y - arrow_length * sin(radians(arrow_angle))
-            canvas.create_line(image_center_x, image_center_y, end_x, end_y, arrow='last', fill='red', width=9)
-        for vector in self.blur_vectors.r:
-            arrow_angle = vector.angle
-            arrow_length = (vector.magnitude * length_scale_factor)
-            end_x = image_center_x + arrow_length * cos(radians(arrow_angle))
-            end_y = image_center_y - arrow_length * sin(radians(arrow_angle))
-            canvas.create_line(image_center_x, image_center_y, end_x, end_y, arrow='last', fill='green', width=6)
-        for vector in self.blur_vectors.r:
-            arrow_angle = vector.angle
-            arrow_length = (vector.magnitude * length_scale_factor)
-            end_x = image_center_x + arrow_length * cos(radians(arrow_angle))
-            end_y = image_center_y - arrow_length * sin(radians(arrow_angle))
-            canvas.create_line(image_center_x, image_center_y, end_x, end_y, arrow='last', fill='blue', width=2)
+            canvas.create_line(image_center_x, image_center_y, end_x, end_y, arrow='last', fill='red', width=2)
 
         # Add bounding box lines and sharpness text
         if "bounding_boxes" in dir(self):
@@ -454,8 +410,8 @@ class Report:
             'Blue Contrast': self.rgb_stats.Cb,
         }
         for i in range(max_vector_entries):
-            angle = self.blur_vectors.r[i].angle
-            magnitude = self.blur_vectors.r[i].magnitude
+            angle = self.blur_vectors[i].angle
+            magnitude = self.blur_vectors[i].magnitude
             report_data[f'Blur Vector {i+1} Angle'] = angle
             report_data[f'Blur Vector {i+1} Magnitude'] = magnitude
 
@@ -657,8 +613,10 @@ def run_demonstration():
     ]
     bounding_boxes = set_bounding_boxes(bounds)
 
+
     # Set up report variables, and Generate report
     report = get_report(image, salient_characters=bounding_boxes)
+    # report = get_report(image)
     report.image = image
 
     # Display images that represent image: blur profile and color palette

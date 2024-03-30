@@ -15,14 +15,14 @@
  *  -If no fftw_plan* is given, then the function will automatically generate
  *   an fftw_plan* to be used, based on the inputted image height.
 ******************************************************************************/
-Image_RGB* rgb_fft(Image_RGB* image) {
+Image_PGM* pgm_fft(Image_PGM* pgm) {
     // Allow threading
     fftw_init_threads();
     fftw_plan_with_nthreads(num_cores);
 
     // Create output and input
-    fftw_complex* output = fftw_alloc_complex((image->width/2+1) * image->height);
-    double* in = fftw_alloc_real(image->height * image->width);
+    fftw_complex* output = fftw_alloc_complex((pgm->width/2+1) * pgm->height);
+    double* in = fftw_alloc_real(pgm->height * pgm->width);
 
     if (!output || !in) {
         fprintf(stderr, "ERROR: Memory allocation for fftw_malloc failed.\n");
@@ -31,36 +31,22 @@ Image_RGB* rgb_fft(Image_RGB* image) {
         return NULL;
     }
 
-    fftw_plan plan = fftw_plan_dft_r2c_2d(image->height, image->width, in, output, FFTW_ESTIMATE);
+    fftw_plan plan = fftw_plan_dft_r2c_2d(pgm->height, pgm->width, in, output, FFTW_ESTIMATE);
     if (!plan) {
         fprintf(stderr, "ERROR: fftw_plan generation failed.");
         fftw_destroy_plan(plan);
         return NULL;
     }
 
-    int fft_width = image->width/2+1;
-    Image_RGB* fft_image = create_rgb_image(fft_width, image->height);
+    int fft_width = pgm->width/2+1;
+    Image_PGM* fft_image = create_pgm_image(fft_width, pgm->height);
     int i_tot = fft_image->width * fft_image->height;
 
     // Execute fftw for red, collect magnitudes^2 in fft_image
-    memcpy(in, image->r, sizeof(double) * image->width * image->height);
+    memcpy(in, pgm->data, sizeof(double) * pgm->width * pgm->height);
     fftw_execute(plan);
     for (int i=0; i<i_tot; i++) {
-        fft_image->r[i] = output[i][0]*output[i][0] + output[i][1]*output[i][1];
-    }
-
-    // Execute fftw for green, collect magnitudes^2 in fft_image
-    memcpy(in, image->g, sizeof(double)*image->width*image->height);
-    fftw_execute(plan);
-    for (int i=0; i<i_tot; i++) {
-        fft_image->g[i] = output[i][0]*output[i][0] + output[i][1]*output[i][1];
-    }
-
-    // Execute fftw for green, collect magnitudes^2 in fft_image
-    memcpy(in, image->b, sizeof(double)*image->width*image->height);
-    fftw_execute(plan);
-    for (int i=0; i<i_tot; i++) {
-        fft_image->b[i] = output[i][0]*output[i][0] + output[i][1]*output[i][1];
+        fft_image->data[i] = output[i][0]*output[i][0] + output[i][1]*output[i][1];
     }
 
     // Destroy plan, free memory, clean up threads and traces of FFTW
@@ -81,9 +67,9 @@ Image_RGB* rgb_fft(Image_RGB* image) {
  * compute_magnitude_fft returns an Image_RGB* to a normalized fft, given an
  *   rgb image.
 ******************************************************************************/
-Image_RGB* compute_magnitude_fft(Image_RGB* image) {
-    Image_RGB* fft = rgb_fft(image);
-    rgb_normalize_fft(fft, NULL);
+Image_PGM* compute_magnitude_fft(Image_PGM* pgm) {
+    Image_PGM* fft = pgm_fft(pgm);
+    pgm_normalize_fft(fft, NULL);
     return fft;
 }
 
@@ -93,11 +79,13 @@ Image_RGB* compute_magnitude_fft(Image_RGB* image) {
  *  -Function is designed for development, as it prompts users for command-line
  *   input.
 ******************************************************************************/
-void save_fft(Image_RGB* fft) {
+void save_fft(Image_PGM* fft) {
+    Image_RGB* rgb = pgm2rgb(fft);
     const char* q = "Enter the name of the .txt file you wish to write to: ";
     char* output_filename = create_path("images/output/", q, ".txt");
-    write_image_to_file(fft, output_filename);
+    write_image_to_file(rgb, output_filename);
     free(output_filename), output_filename = NULL;
+    free_image_rgb(rgb);
 }
 
 
@@ -120,8 +108,8 @@ void save_fft(Image_RGB* fft) {
  * quadrants Q1 with Q4 and Q2 with Q3, and also rotates Q2 and Q3 by 180 degrees.
  * Coordinate validation is performed to ensure that array access is within bounds.
  ******************************************************************************/
-Image_RGB* fft_shift(Image_RGB* fft) {
-    Image_RGB* fft_image = create_rgb_image(fft->width*2 - 1, fft->height);
+Image_PGM* fft_shift(Image_PGM* fft) {
+    Image_PGM* fft_image = create_pgm_image(fft->width*2 - 1, fft->height);
     // Iterate through one quarter of needed image, via one half of the image
     printf("new_image size: (%3d, %3d)\t old_image size: (%3d, %3d)\n", fft_image->width, fft_image->height, fft->width, fft->height);
     
@@ -131,9 +119,7 @@ Image_RGB* fft_shift(Image_RGB* fft) {
     printf("height_equalizer: %d\t width_equalizer: %d\n", height_compensator, width_compensator);
 
     int errors = 0;
-    Pixel r_temp;
-    Pixel g_temp;
-    Pixel b_temp;
+    Pixel temp;
     int half_fft_height = fft->height/2;
     int y_val, x_val;
     int half_height_plus_compensator = half_fft_height+height_compensator;
@@ -143,44 +129,28 @@ Image_RGB* fft_shift(Image_RGB* fft) {
             /*** Swap Q1 and Q4 ***/
             y_val = y+half_fft_height, x_val = x, validate_coordinates(fft, x_val, y_val, &errors);
             // New Q1 gets old Q4
-            r_temp = fft->r[y_val*fft_width + x_val];
-            g_temp = fft->g[y_val*fft_width + x_val];
-            b_temp = fft->b[y_val*fft_width + x_val];
+            temp = fft->data[y_val*fft_width + x_val];
             if (y-height_compensator != -1) { // If height is odd, middle row goes in a theoretical pixels[-1]
                 y_val = y-height_compensator, x_val = x+fft->width-width_compensator, validate_coordinates(fft_image, x_val, y_val, &errors);
-                fft_image->r[y_val*fft_width + x_val] = r_temp;
-                fft_image->g[y_val*fft_width + x_val] = g_temp;
-                fft_image->b[y_val*fft_width + x_val] = b_temp;
+                fft_image->data[y_val*fft_width + x_val] = temp;
             }
             y_val = y, x_val = x, validate_coordinates(fft, x_val, y_val, &errors);
             // New Q4 gets old Q1
-            r_temp = fft->r[y_val * fft_width + x_val];
-            g_temp = fft->g[y_val * fft_width + x_val];
-            b_temp = fft->b[y_val * fft_width + x_val];
+            temp = fft->data[y_val * fft_width + x_val];
             y_val = y+half_fft_height, x_val = x+fft->width-width_compensator, validate_coordinates(fft_image, x_val, y_val, &errors);
-            fft_image->r[y_val * fft_width + x_val] = r_temp;
-            fft_image->g[y_val * fft_width + x_val] = g_temp;
-            fft_image->b[y_val * fft_width + x_val] = b_temp;
+            fft_image->data[y_val * fft_width + x_val] = temp;
 
             /*** Rotate to get Q2 and Q3 ***/
             y_val = y, x_val = x, validate_coordinates(fft, x_val, y_val, &errors);
             // Q2 is 180 deg rotation of Q4
-            r_temp = fft->r[y_val * fft_width + x_val];
-            g_temp = fft->g[y_val * fft_width + x_val];
-            b_temp = fft->b[y_val * fft_width + x_val];
+            temp = fft->data[y_val * fft_width + x_val];
             y_val = half_fft_height-y, x_val = fft->width-1-x, validate_coordinates(fft_image, x_val, y_val, &errors);
-            fft_image->r[y_val * fft_width + x_val] = r_temp; //width-1 because width-1=last_index
-            fft_image->g[y_val * fft_width + x_val] = g_temp;
-            fft_image->b[y_val * fft_width + x_val] = b_temp;
+            fft_image->data[y_val * fft_width + x_val] = temp; //width-1 because width-1=last_index
             y_val = half_fft_height+y, x_val = x, validate_coordinates(fft, x_val, y_val, &errors);
             // Q3 is 180 deg rotation of Q1
-            r_temp = fft->r[y_val * fft_width + x_val];
-            g_temp = fft->g[y_val * fft_width + x_val];
-            b_temp = fft->b[y_val * fft_width + x_val];
+            temp = fft->data[y_val * fft_width + x_val];
             y_val = fft->height-1-y, x_val = fft->width-1-x, validate_coordinates(fft_image, x_val, y_val, &errors);
-            fft_image->r[y_val * fft_width + x_val] = r_temp; // height-1 because height-1=last_index
-            fft_image->g[y_val * fft_width + x_val] = g_temp;
-            fft_image->b[y_val * fft_width + x_val] = b_temp;
+            fft_image->data[y_val * fft_width + x_val] = temp; // height-1 because height-1=last_index
         }
     }
     return fft_image;
@@ -200,21 +170,17 @@ Image_RGB* fft_shift(Image_RGB* fft) {
  *  -If DEBUG is set to 1, speed performance will suffer, as info messages for
  *   maximums and scaled values will be shown.
 ******************************************************************************/
-void rgb_normalize_fft(Image_RGB* fft, Lookup_1D* fft_normalizer_lookup) {
+void pgm_normalize_fft(Image_PGM* fft, Lookup_1D* fft_normalizer_lookup) {
     int guess_max_location = fft->height*fft->width/2;
-    double max = fft->r[guess_max_location];     // Set Maximum as any valid value
+    double max = fft->data[guess_max_location];     // Set Maximum as any valid value
     int i_tot = fft->height * fft->width;   // Get stopping point
     int max_index = 0;
 
     // Find maximum input
     START_TIMING(find_max_time);
     for (int i=0; i<i_tot; i++) {
-        double r_pixel = fft->r[i]; // Set temporary values for efficiency
-        double g_pixel = fft->g[i];
-        double b_pixel = fft->b[i];
-        if (max < r_pixel) {max = r_pixel; max_index = i;}
-        if (max < g_pixel) {max = g_pixel;}
-        if (max < b_pixel) {max = b_pixel;}
+        double p = fft->data[i]; // Set temporary values for efficiency
+        if (max < p) {max = p; max_index = i;}
     }
     END_TIMING(find_max_time, "finding the FFT max value");
 
@@ -228,27 +194,19 @@ void rgb_normalize_fft(Image_RGB* fft, Lookup_1D* fft_normalizer_lookup) {
     START_TIMING(normalize_fft_time);
     // calculate normalized values
     for (int i=0; i<i_tot; i++) {
-        if (fft->r[i] < 1) fft->r[i] = 0;
-        else fft->r[i] = log(fft->r[i]) * G_s;
-        if (fft->g[i] < 1) fft->g[i] = 0;
-        else fft->g[i] = log(fft->g[i]) * G_s;
-        if (fft->b[i] < 1) fft->b[i] = 0;
-        else fft->b[i] = log(fft->b[i]) * G_s;
+        if (fft->data[i] < 1) fft->data[i] = 0;
+        else fft->data[i] = log(fft->data[i]) * G_s;
     }
     END_TIMING(normalize_fft_time, "normalizing FFT values");
 
     #ifdef VERBOSE
         // Set Maximum as any valid value
-        max = fft->r[0];
+        max = fft->data[0];
 
         // Set maximum values
         for (int i=0; i<i_tot; i++) {
-            double r_pixel = fft->r[i]; // Set temporary values for efficiency
-            double g_pixel = fft->g[i];
-            double b_pixel = fft->b[i];
-            if (max < r_pixel) {max = r_pixel;}
-            if (max < g_pixel) {max = g_pixel;}
-            if (max < b_pixel) {max = b_pixel;}
+            double p = fft->data[i]; // Set temporary values for efficiency
+            if (max < p) {max = p;}
         }
         printf("Maximum value found in the normalized FFT: %f\n", max);
     #endif
