@@ -340,6 +340,7 @@ Blur_Vector_Group* vectorize_blur_profile(Blur_Profile* blur_profile,
     int smooth_size = 5;
     Pixel* smoother = initialize_1d_smooth_filter(smooth_size);
     Pixel* smooth = convolve_1d(tot, smoother, num_angle_bins, smooth_size);
+    free(smoother);
     
     // Find maxima in the smoothed data
     Blur_Vector maxima[10];
@@ -364,6 +365,7 @@ Blur_Vector_Group* vectorize_blur_profile(Blur_Profile* blur_profile,
             maxima[maxima_idx++].magnitude = tot[num_angle_bins-1]/radius_cutoff;
         }
     }
+    free(smooth);
     free(tot);
 
     // for max_angle in maxima:

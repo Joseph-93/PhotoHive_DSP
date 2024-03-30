@@ -130,6 +130,8 @@ Image_PGM* rgb2pgm(Image_RGB* rgb);
 
 Image_RGB* pgm2rgb(Image_PGM* pgm);
 
+void free_crop_boundaries(Crop_Boundaries* cb);
+
 void free_image_pgm(Image_PGM* image);
 
 Pixel get_hsv_average(Image_HSV* hsv);

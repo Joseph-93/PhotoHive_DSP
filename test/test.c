@@ -69,7 +69,7 @@ int main() {
     // Clean up
     free_image_rgb(image);
     free_full_report(&full_report_data);
+    free_crop_boundaries(crop_boundaries);
 
     return 0;
 }
-
