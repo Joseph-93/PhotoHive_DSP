@@ -160,7 +160,7 @@ Image_RGB* read_image(const char* filepath) {
         fscanf(file, "%d %d %d", &r, &g, &b);
         // Check for incorrect values
         if (r<0 || r>255 || g<0 || g>255 || b<0 || b>255) {
-            fprintf(stderr, "ERROR: file contained pixel values outside range [0,255].");
+            fprintf(stderr, "ERROR: file contained pixel values outside range [0,255].\n");
             return NULL;
         }
         // Normalize r,g,b values to the range [0,1]
@@ -214,7 +214,7 @@ Image_PGM* crop_pgm(Image_PGM* image, int right, int left, int bottom, int top) 
     // Check that boundaries are valid
     if (right > image->width | left > image->width | bottom > image->height | top > image->height |
         left < 0 | right < 0 | top < 0 | bottom < 0) {
-        fprintf(stderr, "Error: crop boundaries outside of image boundaries.");
+        fprintf(stderr, "Error: crop boundaries outside of image boundaries.\n");
         return NULL;
     }
     // Calculate cropped image width and height, then create the image
@@ -245,7 +245,7 @@ Image_RGB* crop_image(Image_RGB* image, int right, int left, int bottom, int top
     // Check that boundaries are valid
     if (right > image->width | left > image->width | bottom > image->height | top > image->height |
         left < 0 | right < 0 | top < 0 | bottom < 0) {
-        fprintf(stderr, "Error: crop boundaries outside of image boundaries.");
+        fprintf(stderr, "Error: crop boundaries outside of image boundaries.\n");
         return NULL;
     }
 
@@ -270,10 +270,12 @@ Image_RGB* crop_image(Image_RGB* image, int right, int left, int bottom, int top
  * free_crop_boundaries frees a Crop_Boundaries object given its pointer.
 ******************************************************************************/
 void free_crop_boundaries(Crop_Boundaries* cb) {
-    free(cb->top); cb->top = NULL;
-    free(cb->bottom); cb->bottom = NULL;
-    free(cb->left); cb->left = NULL;
-    free(cb->right); cb->right = NULL;
+    if (cb->N > 0) {
+        free(cb->top); cb->top = NULL;
+        free(cb->bottom); cb->bottom = NULL;
+        free(cb->left); cb->left = NULL;
+        free(cb->right); cb->right = NULL;
+    }
     free(cb); cb = NULL;
 }
 
@@ -322,7 +324,7 @@ void save_rgb(Image_RGB* rgb) {
 ******************************************************************************/
 Image_RGB* read_image_from_files() {
     const char* q = "\nEnter an RGB image filename: ";
-    char* input_filename = create_path("images/readable/", q, ".txt");
+    char* input_filename = create_path("data/test_readable/", q, ".txt");
     Image_RGB* image = read_image(input_filename);
     free(input_filename), input_filename = NULL;
     return image;
@@ -369,7 +371,7 @@ Image_RGB* downsample_rgb(Image_RGB* image, short N) {
 ******************************************************************************/
 Image_HSV* rgb2hsv(Image_RGB* rgb) {
     if (!rgb) {
-        fprintf(stderr, "ERROR: rgb2hsv() recieved a null pointer to rgb.");
+        fprintf(stderr, "ERROR: rgb2hsv() received a null pointer to rgb.\n");
         return NULL;
     }
     // Set height and width to be used
@@ -420,7 +422,7 @@ Image_HSV* rgb2hsv(Image_RGB* rgb) {
 ******************************************************************************/
 Image_RGB* hsv2rgb(Image_HSV* hsv) {
     if (!hsv) {
-        fprintf(stderr, "ERROR: hsv2rgb() recieved a null pointer to rgb.");
+        fprintf(stderr, "ERROR: hsv2rgb() received a null pointer to rgb.\n");
         return NULL;
     }
     short height = hsv->height;

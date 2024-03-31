@@ -1,127 +1,22 @@
 import ctypes
 from types import SimpleNamespace
-import json
-import sys
 from math import cos, sin, radians
+from ctypes import POINTER
+import json
+import time
 from PIL import Image, ImageDraw, ImageFont
 import tkinter as tk
-from PIL import ImageTk
 import numpy as np
-import time
-from ctypes import POINTER, Structure, c_int, c_double
+from PIL import ImageTk
+from .structures import (
+    Image_RGB, Crop_Boundaries, Full_Report_Data, RGB_Statistics, Color_Palette,
+    Blur_Profile, Blur_Vector_Group, Sharpnesses, Pixel_HSV
+)
+from .utils import pil_image_to_image_rgb, image_rgb_to_pillow, hsv_to_rgb
 
-# Load the shared library
-lib = ctypes.CDLL('./build/libreport_data.so')
+# Assuming 'lib' is your ctypes.CDLL loaded library
+from .lib import lib
 
-Pixel = ctypes.c_double
-
-import ctypes
-
-class Sharpnesses(ctypes.Structure):
-    _fields_ = [
-        ("N", ctypes.c_int),
-        ("sharpness", ctypes.POINTER(Pixel))
-    ]
-
-class Blur_Vector(ctypes.Structure):
-    _fields_ = [
-        ("angle", ctypes.c_int),
-        ("magnitude", ctypes.c_float),
-    ]
-
-class Blur_Vector_Group(ctypes.Structure):
-    _fields_ = [
-        ("len_vectors", ctypes.c_int),
-        # Assuming blur_vectors_rgb is a pointer to a pointer of Blur_Vector
-        ("blur_vectors", ctypes.POINTER(Blur_Vector)),
-    ]
-
-class Pixel_HSV(Structure):
-    _fields_ = [
-        ("parent_id", c_int),
-        ("h", c_double),
-        ("s", c_double),
-        ("v", c_double),
-    ]
-
-# Define the C structure in Python
-class Image_RGB(ctypes.Structure):
-    _fields_ = [
-        ("height", ctypes.c_uint),
-        ("width", ctypes.c_uint),
-        ("r", ctypes.POINTER(ctypes.c_double)),
-        ("g", ctypes.POINTER(ctypes.c_double)),
-        ("b", ctypes.POINTER(ctypes.c_double)),
-    ]
-
-
-class Color_Palette(Structure):
-    _fields_ = [
-        ("N", c_int),
-        ("averages", POINTER(Pixel_HSV)),
-        ("percentages", POINTER(c_double)),
-    ]
-
-
-class RGB_Statistics(ctypes.Structure):
-    _fields_ = [
-        ("Br", ctypes.c_double),
-        ("Bg", ctypes.c_double),
-        ("Bb", ctypes.c_double),
-        ("Cr", ctypes.c_double),
-        ("Cg", ctypes.c_double),
-        ("Cb", ctypes.c_double),
-    ]
-
-class Crop_Boundaries(ctypes.Structure):
-    _fields_ = [
-        ("N", ctypes.c_int),
-        ("top", ctypes.POINTER(ctypes.c_int)),
-        ("bottom", ctypes.POINTER(ctypes.c_int)),
-        ("left", ctypes.POINTER(ctypes.c_int)),
-        ("right", ctypes.POINTER(ctypes.c_int)),
-    ]
-
-class Blur_Profile(ctypes.Structure):
-    _fields_ = [
-        ("num_angle_bins", ctypes.c_int),
-        ("num_radius_bins", ctypes.c_int),
-        ("angle_bin_size", ctypes.c_int),
-        ("radius_bin_size", ctypes.c_int),
-        ("bins", ctypes.POINTER(ctypes.POINTER(ctypes.c_double))),
-    ]
-
-    def get_bin_values(self):
-        angle_bins = []
-        for i in range(self.num_angle_bins):
-            radius_array = self.bins[i]
-            angle_bin = [radius_array[j] for j in range(self.num_radius_bins)]
-            angle_bins.append(angle_bin)
-        return angle_bins
-    
-    
-class Full_Report_Data(ctypes.Structure):
-    _fields_ = [
-        ("rgb_stats", ctypes.POINTER(RGB_Statistics)),
-        ("color_palette", ctypes.POINTER(Color_Palette)),
-        ("blur_profile", ctypes.POINTER(Blur_Profile)),
-        ("blur_vectors", ctypes.POINTER(Blur_Vector_Group)),
-        ("average_saturation", ctypes.c_double),
-        ("sharpness", ctypes.POINTER(Sharpnesses)),
-    ]
-
-
-lib.get_full_report_data.restype = ctypes.POINTER(Full_Report_Data)
-lib.get_full_report_data.argtypes = [ctypes.POINTER(Image_RGB), ctypes.POINTER(Crop_Boundaries),
-                                     ctypes.c_int, ctypes.c_int, ctypes.c_int,
-                                     ctypes.c_double, ctypes.c_double,
-                                     ctypes.c_double, ctypes.c_int,
-                                     ctypes.c_int, ctypes.c_int, ctypes.c_int,
-                                     ctypes.c_float, ctypes.c_float,
-                                     ctypes.c_double, ctypes.c_double, ctypes.c_int
-                                     ]
-lib.get_blur_profile_visual.restype = ctypes.POINTER(Image_RGB)
-lib.get_blur_profile_visual.argtypes = [ctypes.POINTER(Blur_Profile), ctypes.c_int, ctypes.c_int]
 
 class Report:
     def __init__(self, report_ptr, height, width):
@@ -234,6 +129,7 @@ class Report:
         img = Image.new('RGB', (img_width, img_height), 'black')
         draw = ImageDraw.Draw(img)
         font = ImageFont.load_default()  # Load the default font
+        font = ImageFont.truetype("DejaVuSans.ttf", 12)  # You can adjust the font size as needed
 
         for i, (color, quantity) in enumerate(zip(self.color_palette.colors, self.color_palette.quantities)):
             # Calculate the position of the block
@@ -324,7 +220,17 @@ class Report:
         scale_width = max_width / self.image.width
         scale_height = max_height / self.image.height
         scale_factor = min(scale_width, scale_height)
-        resized_image = self.image.resize((int(self.image.width * scale_factor), int(self.image.height * scale_factor)), Image.Resampling.LANCZOS)
+
+        if hasattr(Image, 'Resampling'):
+            resampling_filter = Image.Resampling.LANCZOS
+        else:
+            # Fallback for older Pillow versions
+            resampling_filter = Image.LANCZOS
+
+        resized_image = self.image.resize(
+            (int(self.image.width * scale_factor), int(self.image.height * scale_factor)),
+            resampling_filter
+        )
         image_photo = ImageTk.PhotoImage(resized_image)
 
         image_center_x = image_photo.width() // 2
@@ -345,7 +251,7 @@ class Report:
             canvas.create_line(image_center_x, image_center_y, end_x, end_y, arrow='last', fill='red', width=2)
 
         # Add bounding box lines and sharpness text
-        if "bounding_boxes" in dir(self):
+        if "bounding_boxes" in dir(self) and self.bounding_boxes is not None:
             for i in range(self.bounding_boxes.N):
                 x0 = int(self.bounding_boxes.left[i] * scale_factor)
                 y0 = int(self.bounding_boxes.top[i] * scale_factor)
@@ -445,42 +351,16 @@ class Report:
         lib.free_full_report(ctypes.byref(self.data_ptr))
 
 
-def set_bounding_boxes(bounding_boxes):
-    """
-    bounding_boxes should be a list of tuples or a list of dictionaries,
-    where each tuple or dictionary represents one bounding box
-    with 'top', 'bottom', 'left', 'right' values.
-    """
-    n = len(bounding_boxes)
-    top_array = (ctypes.c_int * n)()
-    bottom_array = (ctypes.c_int * n)()
-    left_array = (ctypes.c_int * n)()
-    right_array = (ctypes.c_int * n)()
-
-    for i, bbox in enumerate(bounding_boxes):
-        top_array[i] = bbox['top']
-        bottom_array[i] = bbox['bottom']
-        left_array[i] = bbox['left']
-        right_array[i] = bbox['right']
-
-    crop_boundaries = Crop_Boundaries(
-        N=n,
-        top=top_array,
-        bottom=bottom_array,
-        left=left_array,
-        right=right_array
-    )
-
-    return crop_boundaries
-
-
-def get_report(pil_image: Image, salient_characters=ctypes.POINTER(Crop_Boundaries)(),
+def get_report(pil_image: Image, salient_characters=None,
                h_partitions=18, s_partitions=2, v_partitions=3,
                black_thresh=0.1, gray_thresh=0.1,
                coverage_thresh=0.95, linked_list_size=1000, downsample_rate=1,
                radius_partitions=40, angle_partitions=72,
                quantity_weight=0.1, saturation_value_weight=0.9,
-               fft_streak_thresh=1.15, magnitude_thresh=0.3, blur_cutoff_ratio_denom=2):
+               fft_streak_thresh=1.20, magnitude_thresh=0.3, blur_cutoff_ratio_denom=2):
+    if salient_characters is None:
+        salient_characters = ctypes.POINTER(Crop_Boundaries)()
+
     # Convert PIL image to Image_RGB
     width = pil_image.width
     height = pil_image.height
@@ -515,117 +395,30 @@ def get_report(pil_image: Image, salient_characters=ctypes.POINTER(Crop_Boundari
     return report
 
 
-def hsv_to_rgb(h, s, v):
-    h, s, v = h, s, v
-    c = v * s
-    x = c * (1 - abs((h / 60) % 2 - 1))
-    m = v - c
+def set_bounding_boxes(bounding_boxes):
+    """
+    bounding_boxes should be a list of tuples or a list of dictionaries,
+    where each tuple or dictionary represents one bounding box
+    with 'top', 'bottom', 'left', 'right' values.
+    """
+    n = len(bounding_boxes)
+    top_array = (ctypes.c_int * n)()
+    bottom_array = (ctypes.c_int * n)()
+    left_array = (ctypes.c_int * n)()
+    right_array = (ctypes.c_int * n)()
 
-    if h < 60:
-        r, g, b = c, x, 0
-    elif h < 120:
-        r, g, b = x, c, 0
-    elif h < 180:
-        r, g, b = 0, c, x
-    elif h < 240:
-        r, g, b = 0, x, c
-    elif h < 300:
-        r, g, b = x, 0, c
-    else:
-        r, g, b = c, 0, x
+    for i, bbox in enumerate(bounding_boxes):
+        top_array[i] = bbox['top']
+        bottom_array[i] = bbox['bottom']
+        left_array[i] = bbox['left']
+        right_array[i] = bbox['right']
 
-    r, g, b = (r + m) * 255, (g + m) * 255, (b + m) * 255
-    return int(r), int(g), int(b)
+    crop_boundaries = Crop_Boundaries(
+        N=n,
+        top=top_array,
+        bottom=bottom_array,
+        left=left_array,
+        right=right_array
+    )
 
-# Function to convert PIL image to Image_RGB
-def pil_image_to_image_rgb(pil_image):
-    width, height = pil_image.size
-    img_array = np.array(pil_image) / 255.0
-    r, g, b = img_array[:,:,0], img_array[:,:,1], img_array[:,:,2]
-
-    r_flat = r.flatten().astype(np.double)
-    g_flat = g.flatten().astype(np.double)
-    b_flat = b.flatten().astype(np.double)
-
-    r_ctypes = r_flat.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
-    g_ctypes = g_flat.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
-    b_ctypes = b_flat.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
-    pil_image.r_ctypes = r_ctypes
-    pil_image.g_ctypes = g_ctypes
-    pil_image.b_ctypes = b_ctypes
-
-    return Image_RGB(height=height, width=width, r=r_ctypes, g=g_ctypes, b=b_ctypes)
-
-
-def image_rgb_to_pillow(image_rgb_ptr, width, height):
-    # Assuming image_rgb is an instance of Image_RGB and already filled with data
-    # Convert ctypes pointers to numpy arrays
-    image_rgb = image_rgb_ptr.contents
-
-    DoubleArray = ctypes.c_double * (width * height)
-
-    r_array = ctypes.cast(image_rgb.r, ctypes.POINTER(DoubleArray)).contents
-    g_array = ctypes.cast(image_rgb.g, ctypes.POINTER(DoubleArray)).contents
-    b_array = ctypes.cast(image_rgb.b, ctypes.POINTER(DoubleArray)).contents
-
-    r_np = np.ctypeslib.as_array(r_array).reshape(height, width)
-    g_np = np.ctypeslib.as_array(g_array).reshape(height, width)
-    b_np = np.ctypeslib.as_array(b_array).reshape(height, width)
-
-    img_np = np.stack((r_np, g_np, b_np), axis=-1) * 255
-    img_np = np.clip(img_np, 0, 255).astype(np.uint8)
-
-    # Convert the numpy array to a PIL Image and return
-    return Image.fromarray(img_np, 'RGB')
-
-
-def run_demonstration():
-    global image_name
-    image_path = "images/original/"
-    # Check if a custom image path was provided as a command-line argument
-    if len(sys.argv) > 1:
-        image_name = sys.argv[1]
-    else:
-        image_name = "10.png"
-
-    # Open image
-    image = Image.open(image_path+image_name)
-
-    bounds = [
-        {
-            "left": 61,
-            "right": 383,
-            "top": 212,
-            "bottom": 897,
-        },
-        {
-            "left": 363,
-            "right": 591,
-            "top": 130,
-            "bottom": 805,
-        },
-        {
-            "left": 467,
-            "right": 944,
-            "top": 94,
-            "bottom": 996,
-        },
-    ]
-    bounding_boxes = set_bounding_boxes(bounds)
-
-
-    # Set up report variables, and Generate report
-    report = get_report(image, salient_characters=bounding_boxes)
-    # report = get_report(image)
-    report.image = image
-
-    # Display images that represent image: blur profile and color palette
-    report.generate_color_palette_image()
-    report.bounding_boxes = bounding_boxes
-    report.display_all()
-    json = report.to_json()
-    print(json)
-
-
-if __name__ == "__main__":
-    run_demonstration()
+    return crop_boundaries

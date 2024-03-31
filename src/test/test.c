@@ -35,26 +35,28 @@ int main() {
     // Crop_Boundaries* crop_boundaries=NULL;
 
     Crop_Boundaries* crop_boundaries = (Crop_Boundaries*)malloc(sizeof(Crop_Boundaries));
-    crop_boundaries->N      = 3;
-    crop_boundaries->left   = (int*)malloc(3 * sizeof(int));
-    crop_boundaries->right  = (int*)malloc(3 * sizeof(int));
-    crop_boundaries->top    = (int*)malloc(3 * sizeof(int));
-    crop_boundaries->bottom = (int*)malloc(3 * sizeof(int));
+    // crop_boundaries->N      = 3;
+    // crop_boundaries->left   = (int*)malloc(3 * sizeof(int));
+    // crop_boundaries->right  = (int*)malloc(3 * sizeof(int));
+    // crop_boundaries->top    = (int*)malloc(3 * sizeof(int));
+    // crop_boundaries->bottom = (int*)malloc(3 * sizeof(int));
 
-    crop_boundaries->left[0]   =  61;
-    crop_boundaries->right[0]  = 383;
-    crop_boundaries->top[0]    = 212;
-    crop_boundaries->bottom[0] = 897;
+    // crop_boundaries->left[0]   =  61;
+    // crop_boundaries->right[0]  = 383;
+    // crop_boundaries->top[0]    = 212;
+    // crop_boundaries->bottom[0] = 897;
 
-    crop_boundaries->left[1]   = 363;
-    crop_boundaries->right[1]  = 591;
-    crop_boundaries->top[1]    = 130;
-    crop_boundaries->bottom[1] = 805;
+    // crop_boundaries->left[1]   = 363;
+    // crop_boundaries->right[1]  = 591;
+    // crop_boundaries->top[1]    = 130;
+    // crop_boundaries->bottom[1] = 805;
 
-    crop_boundaries->left[2]   = 467;
-    crop_boundaries->right[2]  = 944;
-    crop_boundaries->top[2]    =  94;
-    crop_boundaries->bottom[2] = 996;
+    // crop_boundaries->left[2]   = 467;
+    // crop_boundaries->right[2]  = 944;
+    // crop_boundaries->top[2]    =  94;
+    // crop_boundaries->bottom[2] = 996;
+
+    crop_boundaries->N = 0;
 
     // Arm full report
     Full_Report_Data* full_report_data = get_full_report_data(image, crop_boundaries,
