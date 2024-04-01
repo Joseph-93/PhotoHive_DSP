@@ -17,7 +17,7 @@ from .structures import (
 )
 
 directory = os.path.dirname(os.path.abspath(__file__))
-lib_path = os.path.join(directory, 'libreport_data.so')
+lib_path = os.path.join(directory, 'PhotoHive_DSP_lib/libreport_data.so')
 lib = ctypes.CDLL(lib_path)
 
 # Set restype and argtypes for loaded functions
