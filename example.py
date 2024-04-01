@@ -1,13 +1,11 @@
 import sys
-import PhotoHive_DSP_lib
-from PhotoHive_DSP_lib.core import set_bounding_boxes, get_report
-
+from .core import set_bounding_boxes, get_report
 from PIL import Image
 
 
 def run_demonstration():
     global image_name
-    image_path = "data/original/"
+    image_path = "PhotoHive_DSP/data/original/"
     # Check if a custom image path was provided as a command-line argument
     if len(sys.argv) > 1:
         image_name = sys.argv[1]
@@ -49,6 +47,8 @@ def run_demonstration():
     report.generate_color_palette_image()
     report.bounding_boxes = bounding_boxes
     report.display_all()
+    report.generate_blur_profile_image()
+    report.display_blur_profile()
     json = report.to_json()
     print(json)
 

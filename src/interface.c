@@ -91,13 +91,15 @@ Full_Report_Data* get_full_report_data(Image_RGB* image, Crop_Boundaries* crop_b
 
 void free_full_report(Full_Report_Data** report) {
     free_color_palette((*report)->color_palette); (*report)->color_palette = NULL;
-    free_blur_profile((*report)->blur_profile); (*report)->blur_profile = NULL;
+    if ((*report)->blur_profile != NULL) {
+        free_blur_profile((*report)->blur_profile); (*report)->blur_profile = NULL;
+    }
     free_blur_vector_group((*report)->blur_vectors); (*report)->blur_vectors = NULL;
     if ((*report)->sharpness != NULL) {
         free((*report)->sharpness->sharpness); (*report)->sharpness->sharpness = NULL;
         free((*report)->sharpness); (*report)->sharpness = NULL;
     }
-    free((*report)->rgb_stats);
+    free((*report)->rgb_stats); (*report)->rgb_stats = NULL;
     
     free((*report)); *report = NULL;
     report = NULL;

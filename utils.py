@@ -1,7 +1,7 @@
 import ctypes
 import numpy as np
 from PIL import Image
-from .structures import Image_RGB, Crop_Boundaries
+from .structures import Image_RGB, Crop_Boundaries, Image_PGM
 
 
 def hsv_to_rgb(h, s, v):
@@ -66,3 +66,21 @@ def image_rgb_to_pillow(image_rgb_ptr, width, height):
 
     # Convert the numpy array to a PIL Image and return
     return Image.fromarray(img_np, 'RGB')
+
+
+def image_pgm_to_pillow(image_pgm_ptr, width, height):
+    # Assuming image_pgm is an instance of Image_PGM and already filled with data
+    # Convert ctypes pointer to numpy array
+    image_pgm = image_pgm_ptr.contents
+
+    DoubleArray = ctypes.c_double * (width * height)
+    data_array = ctypes.cast(image_pgm.data, ctypes.POINTER(DoubleArray)).contents
+
+    # Convert to a numpy array and reshape it to match image dimensions
+    data_np = np.ctypeslib.as_array(data_array).reshape(height, width)
+
+    # Scale the pixel values to the 0-255 range and convert to uint8 for image representation
+    img_np = np.clip(data_np * 255, 0, 255).astype(np.uint8)
+
+    # Convert the numpy array to a PIL Image and return
+    return Image.fromarray(img_np, 'L')  # 'L' mode for grayscale image

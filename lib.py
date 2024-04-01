@@ -9,6 +9,7 @@ from .structures import (
     Blur_Vector_Group,
     Pixel_HSV,
     Image_RGB,
+    Image_PGM,
     Color_Palette,
     RGB_Statistics,
     Crop_Boundaries,
@@ -32,5 +33,5 @@ lib.get_full_report_data.argtypes = [
     ctypes.c_double, ctypes.c_double, ctypes.c_int
 ]
 
-lib.get_blur_profile_visual.restype = ctypes.POINTER(Image_RGB)
+lib.get_blur_profile_visual.restype = ctypes.POINTER(Image_PGM)
 lib.get_blur_profile_visual.argtypes = [ctypes.POINTER(Blur_Profile), ctypes.c_int, ctypes.c_int]

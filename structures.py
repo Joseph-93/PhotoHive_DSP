@@ -41,6 +41,15 @@ class Image_RGB(ctypes.Structure):
     ]
 
 
+# Define the C structure in Python
+class Image_PGM(ctypes.Structure):
+    _fields_ = [
+        ("height", ctypes.c_uint),
+        ("width", ctypes.c_uint),
+        ("data", ctypes.POINTER(ctypes.c_double)),
+    ]
+
+
 class Color_Palette(Structure):
     _fields_ = [
         ("N", c_int),

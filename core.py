@@ -12,7 +12,7 @@ from .structures import (
     Image_RGB, Crop_Boundaries, Full_Report_Data, RGB_Statistics, Color_Palette,
     Blur_Profile, Blur_Vector_Group, Sharpnesses, Pixel_HSV
 )
-from .utils import pil_image_to_image_rgb, image_rgb_to_pillow, hsv_to_rgb
+from .utils import pil_image_to_image_rgb, image_rgb_to_pillow, hsv_to_rgb, image_pgm_to_pillow
 
 # Assuming 'lib' is your ctypes.CDLL loaded library
 from .lib import lib
@@ -90,6 +90,7 @@ class Report:
 
     def _convert_blur_profile(self, blur_profile_ptr):
         c_blur_profile = blur_profile_ptr.contents
+        self.bp_ptr = c_blur_profile
         num_angle_bins = c_blur_profile.num_angle_bins
         num_radius_bins = c_blur_profile.num_radius_bins
         blur_profile = SimpleNamespace()
@@ -153,6 +154,18 @@ class Report:
         self.color_palette_image = img
     
 
+    def generate_blur_profile_image(self):
+        bp_ptr = ctypes.byref(self.bp_ptr)
+        height = self.rgb_stats.height
+        width = self.rgb_stats.width
+        image_rgb_ptr = lib.get_blur_profile_visual(bp_ptr, height, width)
+
+        img = image_pgm_to_pillow(image_rgb_ptr, width, height)
+
+        # Crop the image to remove the blank right half
+        self.blur_profile_image = img.crop((0, 0, width // 2, height))
+
+    
     def display_color_palette_image(self):
         # Display image in window
         window = tk.Tk()
@@ -162,39 +175,27 @@ class Report:
         window.mainloop()
 
 
-    def generate_blur_profile_image(self):
-        bp_ptr = ctypes.byref(self.blur_profile)
-        height = self.rgb_stats.height
-        width = self.rgb_stats.width
-        image_rgb_ptr = lib.get_blur_profile_visual(bp_ptr, height, width)
-
-        img = image_rgb_to_pillow(image_rgb_ptr, width, height)
-
-        # Crop the image to remove the blank right half
-        self.blur_profile_image = img.crop((0, 0, width // 2, height))
-
-    
-    def display_blur_profile(self, path):
+    def display_blur_profile(self):
         # Display the image
         window = tk.Tk()
-        screen_width = int(window.winfo_screenwidth() * 0.9)
-        screen_height = int(window.winfo_screenheight() * 0.9)
-
-        # Calculate the new size to fit the screen while maintaining aspect ratio
-        img_ratio = self.blur_profile_image.width / self.blur_profile_image.height
-        screen_ratio = screen_width / screen_height
-        if img_ratio > screen_ratio:
-            new_width = screen_width
-            new_height = int(screen_width / img_ratio)
-        else:
-            new_height = screen_height
-            new_width = int(screen_height * img_ratio)
 
         # Resize the image
-        img_resized = self.blur_profile_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-        self.blur_profile_image.save(path)  # Save the cropped image
+        max_width = window.winfo_screenwidth() * 0.8
+        max_height = window.winfo_screenheight() * 0.9
+        if hasattr(Image, 'Resampling'):
+            resampling_filter = Image.Resampling.LANCZOS
+        else:
+            # Fallback for older Pillow versions
+            resampling_filter = Image.LANCZOS
+        scale_width = max_width / self.blur_profile_image.width
+        scale_height = max_height / self.blur_profile_image.height
+        scale_factor = min(scale_width, scale_height)
+        resized_image = self.blur_profile_image.resize(
+            (int(self.blur_profile_image.width * scale_factor), int(self.blur_profile_image.height * scale_factor)),
+            resampling_filter
+        )
         # Display the image
-        tk_image = ImageTk.PhotoImage(img_resized)
+        tk_image = ImageTk.PhotoImage(resized_image)
         label = tk.Label(window, image=tk_image)
         label.pack()
 
