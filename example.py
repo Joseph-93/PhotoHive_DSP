@@ -1,5 +1,6 @@
 import sys
-from PhotoHive_DSP_lib import set_bounding_boxes, get_report
+import PhotoHive_DSP_lib
+from PhotoHive_DSP_lib.core import set_bounding_boxes, get_report
 
 from PIL import Image
 
