@@ -35,6 +35,8 @@ typedef struct Full_Report_Data {
 
 int newton_int_sqrt(double val);
 
+bool pre_compute_error_checks(Image_RGB* image);
+
 char* create_path(const char* path, const char* request_string, const char* filetype);
 
 void threading_setup();

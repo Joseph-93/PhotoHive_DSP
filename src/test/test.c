@@ -8,70 +8,154 @@
 #include "../utilities.h"
 #include "../interface.h"
 
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
+// Test configuration parameters
+#define RUN_FAILING_TESTS
+#define RUN_PASSING_TESTS
+#define MASSIVE_WIDTH 120000
+#define MASSIVE_HEIGHT 10000
+#define WIDE_WIDTH 2001
+#define WIDE_HEIGHT 400
+#define TALL_WIDTH 400
+#define TALL_HEIGHT 2001
+#define SMALL_WIDTH 349
+#define SMALL_HEIGHT 350
+
+// Default parameters for get_full_report_data
+#define DEFAULT_H_PARTITIONS 18
+#define DEFAULT_S_PARTITIONS 2
+#define DEFAULT_V_PARTITIONS 3
+#define DEFAULT_BLACK_THRESH 0.1
+#define DEFAULT_GRAY_THRESH 0.1
+#define DEFAULT_COVERAGE_THRESH 0.95
+#define DEFAULT_LINKED_LIST_SIZE 1000
+#define DEFAULT_DOWNSAMPLE_RATE 1
+#define DEFAULT_RADIUS_PARTITIONS 40
+#define DEFAULT_ANGLE_PARTITIONS 72
+#define DEFAULT_QUANTITY_WEIGHT 0.1
+#define DEFAULT_SATURATION_VALUE_WEIGHT 0.9
+#define DEFAULT_FFT_STREAK_THRESH 1.20
+#define DEFAULT_MAGNITUDE_THRESH 0.3
+#define DEFAULT_BLUR_CUTOFF_RATIO_DENOM 2
 
 
-int main() {
-    printf("hello there!");
+#define OUTPUT_BUFFER_SIZE 10000
 
+char output_buffer[OUTPUT_BUFFER_SIZE];
+
+void append_to_output(const char* message) {
+    strcat(output_buffer, message);
+    strcat(output_buffer, "\n");  // New line for each message
+}
+
+
+Full_Report_Data* run_full_report_data(Image_RGB* image, Crop_Boundaries* crop_boundaries) {
+    return get_full_report_data(image, crop_boundaries,
+                                DEFAULT_H_PARTITIONS, DEFAULT_S_PARTITIONS, DEFAULT_V_PARTITIONS, 
+                                DEFAULT_BLACK_THRESH, DEFAULT_GRAY_THRESH, DEFAULT_COVERAGE_THRESH, 
+                                DEFAULT_LINKED_LIST_SIZE, DEFAULT_DOWNSAMPLE_RATE, 
+                                DEFAULT_RADIUS_PARTITIONS, DEFAULT_ANGLE_PARTITIONS, 
+                                DEFAULT_QUANTITY_WEIGHT, DEFAULT_SATURATION_VALUE_WEIGHT,
+                                DEFAULT_FFT_STREAK_THRESH, DEFAULT_MAGNITUDE_THRESH, DEFAULT_BLUR_CUTOFF_RATIO_DENOM);
+}
+
+
+bool test_large_file_size() {
+    Image_RGB* image = create_rgb_image(MASSIVE_WIDTH, MASSIVE_HEIGHT);
+    Crop_Boundaries* crop_boundaries = NULL;  // Or set appropriately if needed
+
+    Full_Report_Data* report = run_full_report_data(image, crop_boundaries);
+    if (report == NULL) {
+        append_to_output("Test Passed: System handled large image.");
+    } else {
+        append_to_output("Test Failed: System could not handle large image.");
+    }
+    if (image) free_image_rgb(image);
+    if (report != NULL) free_full_report(&report);
+}
+
+
+bool test_unusual_aspect_ratios() {
+    Image_RGB* wide_image = create_rgb_image(WIDE_WIDTH, WIDE_HEIGHT);
+    Image_RGB* tall_image = create_rgb_image(TALL_WIDTH, TALL_HEIGHT);
+    Crop_Boundaries* crop_boundaries = NULL;  // Or set appropriately if needed
+
+    Full_Report_Data* wide_report = run_full_report_data(wide_image, crop_boundaries);
+    Full_Report_Data* tall_report = run_full_report_data(tall_image, crop_boundaries);
+
+    if (wide_report == NULL && tall_report == NULL) {
+        append_to_output("Test Passed: System handled images with unusual aspect ratios.");
+    } else {
+        append_to_output("Test Failed: System could not handle images with unusual aspect ratios.");
+    }
+
+    if (wide_image) (wide_image);
+    if (tall_image) free_image_rgb(tall_image);
+    if (wide_report != NULL) free_full_report(&wide_report);
+    if (tall_report != NULL) free_full_report(&tall_report);
+}
+
+
+bool test_minimum_size_constraint() {
+    Image_RGB* small_image = create_rgb_image(SMALL_WIDTH, SMALL_HEIGHT);
+    Crop_Boundaries* crop_boundaries = NULL;  // Or set appropriately if needed
+
+    Full_Report_Data* report = run_full_report_data(small_image, crop_boundaries);
+    if (report == NULL) {
+        append_to_output("Test Passed: System rejected image below minimum size constraint.");
+    } else {
+        append_to_output("Test Failed: System did not reject image below minimum size constraint.");
+    }
+    if (small_image) free_image_rgb(small_image);
+    if (report) free_full_report(&report);
+}
+
+
+bool run_passing_test() {
     // Get image from files
     Image_RGB* image = read_image_from_files();
 
-    float coverage_thresh=.4;
-    int downsample_rate=1;
-    int radius_partitions=40;
-    int angle_partitions=72;
-    float quantity_weight=0.9;
-    float saturation_value_weight=0.1;
-    int h_partitions=18;
-    int s_partitions=2;
-    int v_partitions=3;
-    float black_thresh=0.1;
-    float gray_thresh=0.1;
-    int linked_list_size=1000;
-    double fft_streak_thresh=1.1;
-    double magnitude_thresh=0.3;
-    int blur_cutoff_ratio_denom=2;
-    // Crop_Boundaries* crop_boundaries=NULL;
-
     Crop_Boundaries* crop_boundaries = (Crop_Boundaries*)malloc(sizeof(Crop_Boundaries));
-    // crop_boundaries->N      = 3;
-    // crop_boundaries->left   = (int*)malloc(3 * sizeof(int));
-    // crop_boundaries->right  = (int*)malloc(3 * sizeof(int));
-    // crop_boundaries->top    = (int*)malloc(3 * sizeof(int));
-    // crop_boundaries->bottom = (int*)malloc(3 * sizeof(int));
-
-    // crop_boundaries->left[0]   =  61;
-    // crop_boundaries->right[0]  = 383;
-    // crop_boundaries->top[0]    = 212;
-    // crop_boundaries->bottom[0] = 897;
-
-    // crop_boundaries->left[1]   = 363;
-    // crop_boundaries->right[1]  = 591;
-    // crop_boundaries->top[1]    = 130;
-    // crop_boundaries->bottom[1] = 805;
-
-    // crop_boundaries->left[2]   = 467;
-    // crop_boundaries->right[2]  = 944;
-    // crop_boundaries->top[2]    =  94;
-    // crop_boundaries->bottom[2] = 996;
-
     crop_boundaries->N = 0;
 
-    // Arm full report
-    Full_Report_Data* full_report_data = get_full_report_data(image, crop_boundaries,
-                                         h_partitions, s_partitions, v_partitions, 
-                                         black_thresh, gray_thresh, coverage_thresh, 
-                                         linked_list_size, downsample_rate, 
-                                         radius_partitions, angle_partitions, 
-                                         quantity_weight, saturation_value_weight,
-                                         fft_streak_thresh, magnitude_thresh, blur_cutoff_ratio_denom);
+    Full_Report_Data* full_report_data = run_full_report_data(image, crop_boundaries);
 
+    if (full_report_data == NULL) {
+        append_to_output("Test Failed: system could not finish report on a proper image.");
+    }
+    else {
+        append_to_output("Test Passed: run_passing_test().");
+        free_full_report(&full_report_data);
+    }
 
     // Clean up
-    free_image_rgb(image);
-    free_full_report(&full_report_data);
+    if (image) free_image_rgb(image);
     free_crop_boundaries(crop_boundaries);
+
+    return 0;
+}
+
+
+int main() {
+    memset(output_buffer, 0, OUTPUT_BUFFER_SIZE);
+    printf("Hello there!\n");
+    printf("\nGeneral Kenobi....\n");
+    printf("Running test suite...\n");
+    
+    #ifdef RUN_FAILING_TESTS
+    test_large_file_size();
+    test_unusual_aspect_ratios();
+    test_minimum_size_constraint();
+    #endif
+
+    #ifdef RUN_PASSING_TESTS
+    run_passing_test();
+    #endif
+
+    printf("\nTest suite completed. Test Results:\n%s\n", output_buffer);
 
     return 0;
 }

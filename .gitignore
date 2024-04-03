@@ -9,7 +9,6 @@ CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
 Makefile
-CMakeLists.txt
 *.cmake
 
 # Ignore compiled binaries and object files
@@ -28,8 +27,10 @@ CMakeLists.txt
 .DS_Store
 Thumbs.db
 
+# Ignore data files and temporary builds
 PhotoHive-DSP
 fftw-3.3.10/
 images/
+data/
 refactor_1D.c
 valgrind-out.txt

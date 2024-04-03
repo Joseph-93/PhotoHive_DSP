@@ -8,6 +8,9 @@
 #include "color_quantization.h"
 #include "filtering.h"
 
+#define ASPECT_RATIO_MAX (5.0/1.0)
+#define ASPECT_RATIO_MIN (1.0/5.0)
+#define MAX_NUM_PIXELS (12000*10000)
 
 int num_cores;
 
@@ -28,6 +31,41 @@ int newton_int_sqrt(double val) {
         if (fabs(sqrt-x)<1) {return (int)sqrt;}
         x = sqrt;
     }
+}
+
+
+/******************************************************************************
+ * pre_compute_error_checks is meant to encompass many errors that could occur
+ *   upon calling functions from this library.
+ *  Errors checked:
+ *  -Image not given
+ *  -Impossible image height and width
+ *  -Image channel pointers NULL
+ *  -Image aspect ratio more extreme than 5:1 or 1:5
+******************************************************************************/
+bool pre_compute_error_checks(Image_RGB* image) {
+    if (image == NULL) {
+        fprintf(stderr, "Error: Image pointer is NULL.\n");
+        return true;
+    }
+    if (image->height < 350 || image->width < 350) {
+        fprintf(stderr, "Error: Image height and width must be greater than 350. Height: %d\tWidth%d\n", image->height, image->width);
+        return true;
+    }
+    if (image->height * image->width > MAX_NUM_PIXELS) {
+        fprintf(stderr, "Error: Image must have less than %d pixels.\n", MAX_NUM_PIXELS);
+        return true;
+    }
+    float aspect_ratio = (float)image->height/(float)image->width;
+    if (aspect_ratio < ASPECT_RATIO_MIN || aspect_ratio > ASPECT_RATIO_MAX) {
+        fprintf(stderr, "Error: Invalid aspect ratio: %f\n", aspect_ratio);
+        return true;
+    }
+    if (image->r == NULL || image->g == NULL || image->b == NULL) {
+        fprintf(stderr, "Error: At least one color channel was a NULL pointer.\n");
+        return true;
+    }
+    return false;
 }
 
 

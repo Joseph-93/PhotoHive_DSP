@@ -25,7 +25,11 @@ Full_Report_Data* get_full_report_data(Image_RGB* image, Crop_Boundaries* crop_b
                   float quantity_weight, float saturation_value_weight,
                   double fft_streak_thresh, double magnitude_thresh, int blur_cutoff_ratio_denom
                   ) {
+    if (pre_compute_error_checks(image)) return NULL;
+
+    #ifdef DEBUG
     setbuf(stdout, NULL);
+    #endif
 
     threading_setup();
     printf("\n There are %d cores available to the C program.\n\n", num_cores);

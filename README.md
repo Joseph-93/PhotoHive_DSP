@@ -1,14 +1,14 @@
-# PhotoHive-DSP README.md
+# PhotoHive_DSP README.md
 
 ## Introduction
 
-This guide will help you download and integrate your project with the PhotoHive-DSP library, a digital signal processing tool for pre-Computer Vision feature extraction for images of mountain bike and running races. This tool is for Machine-Learning and Computer Vision engineers with experience in Python and the Pillow library.
+This guide will help you download and integrate your project with the PhotoHive_DSP library, a digital signal processing tool for pre-Computer Vision feature extraction for images of mountain bike and running races. This tool is for Machine-Learning and Computer Vision engineers with experience in Python and the Pillow library.
 
 ## Safety First
 
 (This may seem silly… but code security…) This library is not yet considered stable. Memory issues are possible, and system crashes, null pointer return values, and the like are completely possible. Library failure could cause vulnerabilities and crashes in the code that calls it. Exercise caution when using this library on production environments and make sure to handle errors well when calling the library.
 
-## What does PhotoHive-DSP measure?
+## What does PhotoHive_DSP measure?
 
 This library is built to measure the following variables quickly, precisely, and accurately:
 - Average saturation
@@ -24,10 +24,9 @@ This section provides instructions for downloading and setting up the library.
 
 ### A. Download and build the library
 
-1. Go to the PhotoHive-DSP git repository: https://github.com/Joseph-93/PhotoHive-DSP.
+1. Go to the PhotoHive_DSP git repository: https://github.com/Joseph-93/PhotoHive_DSP.
 2. Download or clone the full repository within your root folder, enter the repository, and run `cmake` on the library as follows (tutorial uses Linux, but Windows and MacOS versions should work the same):
     ```
-    cd root
     git clone https://github.com/Joseph-93/PhotoHive_DSP.git
     cd PhotoHive_DSP
     rm -rf build && mkdir build
@@ -80,7 +79,7 @@ This section provides instructions for downloading and setting up the library.
 
 1. From the library root, remove old builds and create a new build:
     ```
-    cd PhotoHive-DSP
+    cd PhotoHive_DSP
     rm -rf build && mkdir build
     cmake -S src -B build -DCMAKE_BUILD_TYPE=Release
     cmake --build build --config Release
