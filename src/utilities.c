@@ -16,6 +16,24 @@ int num_cores;
 
 
 /******************************************************************************
+ * start_timing() and end_timing() are used to get the time difference between
+ *   the two.
+******************************************************************************/
+struct timeval start_timing() {
+    struct timeval start;
+    gettimeofday(&start, NULL);
+    return start;
+}
+double end_timing(struct timeval start_time) {
+    struct timeval end_time, time_diff;
+    gettimeofday(&end_time, NULL);
+    timersub(&end_time, &start_time, &time_diff);
+    double time_taken = time_diff.tv_sec + time_diff.tv_usec / 1e6;
+    return time_taken;
+}
+
+
+/******************************************************************************
  * newton_int_sqrt returns the nearest integer approximation to the square root
  *   of a given double.
  *  -The Newton square-root algorithm is used, but manually set for accuracy

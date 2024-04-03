@@ -17,6 +17,9 @@
     printf("%s took %f seconds to execute \n", functionName, timeTaken); \
 } while(0)
 
+struct timeval start_timing();
+double end_timing(struct timeval start_time);
+
 extern int num_cores;
 
 typedef struct Sharpnesses {

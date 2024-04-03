@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 
 // Test configuration parameters
 #define RUN_FAILING_TESTS
@@ -46,9 +47,29 @@
 
 char output_buffer[OUTPUT_BUFFER_SIZE];
 
-void append_to_output(const char* message) {
-    strcat(output_buffer, message);
-    strcat(output_buffer, "\n");  // New line for each message
+void append_to_output(const char* format, ...) {
+    char buffer[256];
+    va_list args;
+
+    // Initialize the va_list variable with the last known fixed parameter
+    va_start(args, format);
+    // Use vsnprintf for safe formatting with variable arguments
+    vsnprintf(buffer, sizeof(buffer) - 1, format, args);
+    va_end(args); // Clean up the va_list variable
+
+    // Append newline character to the buffer
+    size_t buf_len = strlen(buffer);
+    if (buf_len < sizeof(buffer) - 1) {
+        buffer[buf_len] = '\n'; // Add newline character
+        buffer[buf_len + 1] = '\0'; // Ensure string is null-terminated
+    }
+
+    // Concatenate the formatted string to the main output buffer
+    if (strlen(output_buffer) + strlen(buffer) < OUTPUT_BUFFER_SIZE) {
+        strcat(output_buffer, buffer);
+    } else {
+        printf("Output buffer full. Truncating or handling overflow...\n");
+    }
 }
 
 
@@ -114,20 +135,25 @@ bool test_minimum_size_constraint() {
 }
 
 
-bool run_passing_test() {
+bool run_time_test() {
     // Get image from files
     Image_RGB* image = read_image_from_files();
 
     Crop_Boundaries* crop_boundaries = (Crop_Boundaries*)malloc(sizeof(Crop_Boundaries));
     crop_boundaries->N = 0;
 
+    struct timeval start = start_timing();
     Full_Report_Data* full_report_data = run_full_report_data(image, crop_boundaries);
+    double elapsed_time = end_timing(start);
 
     if (full_report_data == NULL) {
         append_to_output("Test Failed: system could not finish report on a proper image.");
     }
+    else if (elapsed_time > 0.5) {
+        append_to_output("Test Failed: full report data took %lf seconds to compute.", elapsed_time);
+    }
     else {
-        append_to_output("Test Passed: run_passing_test().");
+        append_to_output("Test Passed: full report data took under 0.5 seconds (took %lf seconds).", elapsed_time);
         free_full_report(&full_report_data);
     }
 
@@ -152,7 +178,7 @@ int main() {
     #endif
 
     #ifdef RUN_PASSING_TESTS
-    run_passing_test();
+    run_time_test();
     #endif
 
     printf("\nTest suite completed. Test Results:\n%s\n", output_buffer);
