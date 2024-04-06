@@ -1,9 +1,11 @@
 import ctypes
+import io
 from types import SimpleNamespace
 from math import cos, sin, radians
 from ctypes import POINTER
 import json
 import time
+import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw, ImageFont
 import tkinter as tk
 import numpy as np
@@ -115,6 +117,66 @@ class Report:
         blur_profile.bins = check_and_correct_nan(bins)
 
         return blur_profile
+
+
+    def generate_blur_direction_frequency_response(self):
+        blur_vectors = self.blur_vectors
+        blur_profile = self.blur_profile
+        plt.figure(figsize=(10, 6))
+
+        # Create a normalized radius index scale from 0 to 1
+        normalized_radius_indices = np.linspace(0, 1, len(blur_profile.bins[0]))
+
+        # Initialize a list to store all frequency responses for averaging
+        all_frequency_responses = []
+
+        for bv in blur_vectors:
+            if bv.magnitude == 0.0:
+                continue
+            # Quantize the angle to match the blur_profile bins
+            angle_partitions = len(blur_profile.bins)
+            q_ang = int(bv.angle / (361 / angle_partitions) + angle_partitions / 2) % angle_partitions
+
+            # Fetch the frequency response for the quantized angle
+            frequency_response = blur_profile.bins[q_ang]
+            all_frequency_responses.append(frequency_response)
+
+            # Plot the frequency response for the current angle
+            plt.plot(normalized_radius_indices, frequency_response, label=f'Directional Angle: {bv.angle} degrees')
+
+            # Compute and plot the frequency response at 90 degrees from the current angle
+            if bv.angle > 0.0:
+                perpendicular_angle = (bv.angle - 90)
+            else:
+                perpendicular_angle = (bv.angle + 90)
+            q_perp_ang = int(perpendicular_angle / (361 / angle_partitions) + angle_partitions / 2) % angle_partitions
+            perp_frequency_response = blur_profile.bins[q_perp_ang]
+            plt.plot(normalized_radius_indices, perp_frequency_response, label=f'Streak at {perpendicular_angle} degrees')
+
+        plt.axhline(y=self.magnitude_threshold, color='r', linestyle='-', label='Blur magnitude threshold')
+
+        # Compute the average for the first half of the radii across all angle bins
+        half_radii = len(blur_profile.bins[0]) // self.blur_cutoff_ratio_denom
+        fft_thresh_line = np.mean([row[:half_radii] for row in blur_profile.bins]) * self.fft_streak_threshold
+        plt.axhline(y=fft_thresh_line, color='b', linestyle='-', label='FFT Streak threshold')
+
+        # Calculate the average frequency response across all angles
+        average_frequency_response = np.mean(blur_profile.bins, axis=0)
+        plt.plot(normalized_radius_indices, average_frequency_response, label='Average Response', linewidth=2, linestyle='--')
+
+        plt.title('Frequency Response by Angle')
+        plt.xlabel('Radius Index')
+        plt.ylabel('Magnitude')
+        plt.legend()
+        plt.grid(True)
+
+        # Save the plot to a BytesIO buffer and then to a PIL.Image
+        buffer = io.BytesIO()
+        plt.savefig(buffer, format='png')
+        buffer.seek(0)
+        image = Image.open(buffer)
+        self.blur_vector_plot = image
+        plt.close()
     
 
     def generate_color_palette_image(self):
@@ -216,7 +278,7 @@ class Report:
         window.title("Image Analysis Report")
 
         # Set up the main image
-        max_width = window.winfo_screenwidth() * 0.8
+        max_width = window.winfo_screenwidth() * 0.6
         max_height = window.winfo_screenheight() * 0.9
         scale_width = max_width / self.image.width
         scale_height = max_height / self.image.height
@@ -241,6 +303,7 @@ class Report:
         canvas = tk.Canvas(window, width=image_photo.width(), height=image_photo.height())
         canvas.pack(side='left', padx=10)
         canvas.create_image(0, 0, anchor='nw', image=image_photo)
+        canvas.image = image_photo
 
         # Draw arrows representing blur vectors
         length_scale_factor = min(image_photo.width()/2, image_photo.height()/2)
@@ -278,22 +341,46 @@ class Report:
 
         canvas.image = image_photo  # Keep a reference
 
-        # Display RGB stats, average saturation, and sharpness
-        stats_text = f"\nRed Brightness: {self.rgb_stats.Br}\n"
-        stats_text += f"Green Brightness: {self.rgb_stats.Bg}\n"
-        stats_text += f"Blue Brightness: {self.rgb_stats.Bb}\n"
-        stats_text += f"Red Contrast: {self.rgb_stats.Cr}\n"
-        stats_text += f"Green Contrast: {self.rgb_stats.Cg}\n"
-        stats_text += f"Blue Contrast: {self.rgb_stats.Cb}\n"
-        stats_text += f"Saturation: {self.average_saturation}\n"
-        stats_label = tk.Label(window, text=stats_text, justify=tk.LEFT)
-        stats_label.pack(side='top', padx=10)
+        # Setup the right side container
+        right_side_frame = tk.Frame(window)
+        right_side_frame.pack(side='right', fill='both')
 
-        # Display color palette and blur profile images
-        color_palette_photo = ImageTk.PhotoImage(self.color_palette_image)
-        color_palette_label = tk.Label(window, image=color_palette_photo)
-        color_palette_label.pack(side='top', padx=10)
+        # Display RGB stats, average saturation, and sharpness
+        stats_text = f"\nRed Brightness: {self.rgb_stats.Br}\n" + \
+                    f"Green Brightness: {self.rgb_stats.Bg}\n" + \
+                    f"Blue Brightness: {self.rgb_stats.Bb}\n" + \
+                    f"Red Contrast: {self.rgb_stats.Cr}\n" + \
+                    f"Green Contrast: {self.rgb_stats.Cg}\n" + \
+                    f"Blue Contrast: {self.rgb_stats.Cb}\n" + \
+                    f"Saturation: {self.average_saturation}\n"
+        stats_label = tk.Label(right_side_frame, text=stats_text, justify=tk.LEFT)
+        stats_label.pack(side='top', padx=10, anchor='n')
+
+        # Define the maximum size for images
+        max_image_width = window.winfo_screenwidth() * 0.3  # 30% of screen width
+        max_image_height = window.winfo_screenheight() * 0.3  # 30% of screen height
+
+        # Function to resize image within a maximum width and height
+        def resize_image(image, max_width, max_height):
+            orig_width, orig_height = image.size
+            ratio = min(max_width / orig_width, max_height / orig_height)
+            new_size = (int(orig_width * ratio), int(orig_height * ratio))
+            return image.resize(new_size, resampling_filter)
+
+        # Display color palette image
+        color_palette_image_resized = resize_image(self.color_palette_image, max_image_width, max_image_height)
+        color_palette_photo = ImageTk.PhotoImage(color_palette_image_resized)
+        color_palette_label = tk.Label(right_side_frame, image=color_palette_photo)
+        color_palette_label.pack(side='top', anchor='n')
         color_palette_label.image = color_palette_photo  # Keep a reference
+
+        # Try to display the blur_vector_plot if it exists
+        if hasattr(self, 'blur_vector_plot') and self.blur_vector_plot is not None:
+            blur_vector_image_resized = resize_image(self.blur_vector_plot, max_image_width, max_image_height)
+            blur_vector_photo = ImageTk.PhotoImage(blur_vector_image_resized)
+            blur_vector_label = tk.Label(right_side_frame, image=blur_vector_photo)
+            blur_vector_label.pack(side='top', anchor='n')
+            blur_vector_label.image = blur_vector_photo  # Keep a reference
 
         window.mainloop()
 
@@ -392,6 +479,9 @@ def get_report(pil_image: Image, salient_characters=None,
 
     # Convert the returned Full_Report_Data pointer to a Python object
     report = Report(report_data_ptr, height, width)
+    report.magnitude_threshold = magnitude_thresh
+    report.fft_streak_threshold = fft_streak_thresh
+    report.blur_cutoff_ratio_denom = blur_cutoff_ratio_denom
 
     return report
 
