@@ -230,6 +230,14 @@ void blur_profile_tests(Image_PGM* fft) {
 }
 
 
+void remove_dc_bias(Image_PGM* img, double avg) {
+    int len = img->height*img->width;
+    for (int i=0; i<len; i++) {
+        img->data[i] -= avg;
+    }
+}
+
+
 /******************************************************************************
  * get_blur_profile is the top-level function for production implementation for
  *   the blur_profile.c file. It takes in image and returns the blur profile
@@ -239,7 +247,11 @@ void blur_profile_tests(Image_PGM* fft) {
  *   the size of each polar-coordinate FFT bin, and therefore the granularity
  *   of the FFT measurement.
 ******************************************************************************/
-Blur_Profile* get_blur_profile(Image_PGM* pgm, int num_radius_bins, int num_angle_bins) {
+Blur_Profile* get_blur_profile(Image_PGM* pgm, int num_radius_bins, int num_angle_bins, double avg) {
+    START_TIMING(remove_dc_bias_time);
+    remove_dc_bias(pgm, avg);
+    END_TIMING(remove_dc_bias_time, "removing DC bias");
+
     // Calculate FFT
     START_TIMING(compute_mag_fft_time);
     Image_PGM* fft = compute_magnitude_fft(pgm);

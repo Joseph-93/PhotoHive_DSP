@@ -75,7 +75,8 @@ Full_Report_Data* get_full_report_data(Image_RGB* image, Crop_Boundaries* crop_b
 
     // Get blur profile
     START_TIMING(blur_profile_time);
-    Blur_Profile* bp = get_blur_profile(pgm, radius_partitions, angle_partitions);
+    double avg = (rgb_stats->Br + rgb_stats->Bg + rgb_stats->Bb)/3.0;
+    Blur_Profile* bp = get_blur_profile(pgm, radius_partitions, angle_partitions, avg);
     Blur_Vector_Group* bv = vectorize_blur_profile(bp, fft_streak_thresh, magnitude_thresh, blur_cutoff_ratio_denom);
     END_TIMING(blur_profile_time, "blur profile");
 

@@ -1,6 +1,5 @@
 import sys
-from .core import set_bounding_boxes, get_report
-from PIL import Image
+from core import set_bounding_boxes, get_report
 
 
 def run_demonstration():
@@ -10,42 +9,42 @@ def run_demonstration():
     if len(sys.argv) > 1:
         image_name = sys.argv[1]
     else:
-        image_name = "10.png"
+        image_name = "12.png"
 
     # Open image
     image = Image.open(image_path+image_name)
 
-    bounds = [
-        {
-            "left": 61,
-            "right": 383,
-            "top": 212,
-            "bottom": 897,
-        },
-        {
-            "left": 363,
-            "right": 591,
-            "top": 130,
-            "bottom": 805,
-        },
-        {
-            "left": 467,
-            "right": 944,
-            "top": 94,
-            "bottom": 996,
-        },
-    ]
-    bounding_boxes = set_bounding_boxes(bounds)
+    # bounds = [
+    #     {
+    #         "left": 61,
+    #         "right": 383,
+    #         "top": 212,
+    #         "bottom": 897,
+    #     },
+    #     {
+    #         "left": 363,
+    #         "right": 591,
+    #         "top": 130,
+    #         "bottom": 805,
+    #     },
+    #     {
+    #         "left": 467,
+    #         "right": 944,
+    #         "top": 94,
+    #         "bottom": 996,
+    #     },
+    # ]
+    # bounding_boxes = set_bounding_boxes(bounds)
 
 
     # Set up report variables, and Generate report
-    report = get_report(image, salient_characters=bounding_boxes)
-    # report = get_report(image)
+    # report = get_report(image, salient_characters=bounding_boxes)
+    report = get_report(image)
     report.image = image
 
     # Display images that represent image: blur profile and color palette
     report.generate_color_palette_image()
-    report.bounding_boxes = bounding_boxes
+    # report.bounding_boxes = bounding_boxes
     report.display_all()
     report.generate_blur_profile_image()
     report.display_blur_profile()

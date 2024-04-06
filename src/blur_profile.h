@@ -86,7 +86,9 @@ Cartesian_To_Polar* cartesian_to_polar_conversion(unsigned int width, unsigned i
 
 void free_cartesian_to_polar(Cartesian_To_Polar* c2p);
 
-Blur_Profile* get_blur_profile(Image_PGM* pgm, int num_radius_bins, int num_angle_bins);
+void remove_dc_bias(Image_PGM* img, double avg);
+
+Blur_Profile* get_blur_profile(Image_PGM* pgm, int num_radius_bins, int num_angle_bins, double avg);
 
 void free_blur_profile(Blur_Profile* bp);
 
