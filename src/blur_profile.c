@@ -382,10 +382,18 @@ Blur_Vector_Group* vectorize_blur_profile(Blur_Profile* blur_profile,
 
     // for max_angle in maxima:
     for (int i=0; i<maxima_idx; i++) {
+
         // Adjust angle_index to be within the valid range
         int angle_idx = (maxima[i].angle + num_angle_bins/2) % num_angle_bins;
         // Get the signal for the current angle
         Pixel* cur_sig = bins[angle_idx];
+
+        // Check if cur_sig is also above average (could be another streak)
+        Pixel blur_avg = 0;
+        for (int i=0; i<radius_cutoff; i++) {
+            blur_avg += cur_sig[i];
+        }
+        if (blur_avg < avg) continue;
 
         // Find the index where the signal falls below the threshold
         int cur_max_radius = num_radius_bins;
