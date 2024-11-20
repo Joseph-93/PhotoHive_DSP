@@ -170,7 +170,8 @@ Sharpnesses* get_variance_sharpness(Image_PGM* image, Crop_Boundaries* bounds) {
         int length = cropped->height*cropped->width;
         Pixel avg = get_average(filtered, length);
 
-        sharpnesses->sharpness[i] = get_variance(filtered, length, avg);
+        // Get the sharpness. NOTE: devide by avg to get a relatively scale-invariant measure
+        sharpnesses->sharpness[i] = get_variance(filtered, length, avg) / avg;
 
         free(filtered);
         free_image_pgm(cropped);

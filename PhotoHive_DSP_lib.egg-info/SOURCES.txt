@@ -1,0 +1,7 @@
+README.md
+setup.py
+PhotoHive_DSP_lib.egg-info/PKG-INFO
+PhotoHive_DSP_lib.egg-info/SOURCES.txt
+PhotoHive_DSP_lib.egg-info/dependency_links.txt
+PhotoHive_DSP_lib.egg-info/requires.txt
+PhotoHive_DSP_lib.egg-info/top_level.txt

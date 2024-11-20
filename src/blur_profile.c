@@ -393,7 +393,11 @@ Blur_Vector_Group* vectorize_blur_profile(Blur_Profile* blur_profile,
         for (int i=0; i<radius_cutoff; i++) {
             blur_avg += cur_sig[i];
         }
-        if (blur_avg < avg) continue;
+        if (blur_avg > avg) {
+            blur_vectors[i].angle = 0.0;
+            blur_vectors[i].magnitude = 0.0;
+            continue;
+        }
 
         // Find the index where the signal falls below the threshold
         int cur_max_radius = num_radius_bins;
